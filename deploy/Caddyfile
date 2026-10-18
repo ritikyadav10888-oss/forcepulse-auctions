@@ -1,0 +1,17 @@
+# SITE_ADDRESS comes from .env: "forcepulse.in, www.forcepulse.in" (automatic https) or ":80" (plain http).
+{
+	servers {
+		# Visitor IPs, for sign-in rate limits: only proxies on private networks (the Cloudflare
+		# Tunnel container, a load balancer) may pass them on; anyone else's X-Forwarded-For is replaced.
+		trusted_proxies static private_ranges
+		client_ip_headers Cf-Connecting-IP X-Forwarded-For
+	}
+}
+
+{$SITE_ADDRESS} {
+	encode gzip
+	request_body {
+		max_size 5MB
+	}
+	reverse_proxy app:3000
+}

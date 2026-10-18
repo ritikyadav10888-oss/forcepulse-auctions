@@ -1,0 +1,61 @@
+# Force Pulse on any server with Docker:  docker compose up -d --build
+# Settings come from .env. SITE_ADDRESS="forcepulse.in, www.forcepulse.in" gets automatic https;
+# leave it unset to serve plain http on port 80 (set COOKIE_SECURE="false" then).
+services:
+  app:
+    build: .
+    image: forcepulse:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # These win over .env, so the database and photos always land in the data folder
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: file:/data/forcepulse.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      # DATA_DIR in .env moves it, e.g. out of a OneDrive folder (synced files can corrupt the database)
+      - ${DATA_DIR:-./data}:/data
+    expose:
+      - "3000"
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Web server in front: https certificates (Let's Encrypt) and websockets for live bidding
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Optional: puts the site on the internet without opening router ports (e.g. hosting from a laptop).
+  # Start with:  docker compose --profile tunnel up -d   then find the https link in:  docker compose logs tunnel
+  # The free trycloudflare.com link changes whenever this container restarts.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:80
+    depends_on:
+      - caddy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy-data:
+  caddy-config:

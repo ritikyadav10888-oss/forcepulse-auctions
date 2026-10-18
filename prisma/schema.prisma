@@ -1,0 +1,82 @@
+// Force Pulse database.
+// Auctions, teams, players and live state keep the app's own record shape as JSON in `data`;
+// the columns next to it are what the server filters and authorises on.
+// Local development uses SQLite. For PostgreSQL change `provider` to "postgresql",
+// point DATABASE_URL at the database and run `npx prisma db push`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  orgName      String    @default("")
+  passwordHash String
+  isSuperAdmin Boolean   @default(false) // Force Pulse staff
+  createdBy    String?
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+}
+
+model Auction {
+  id         String   @id
+  ownerEmail String?
+  data       String
+  createdAt  DateTime @default(now())
+}
+
+model Team {
+  id        String   @id
+  auctionId String
+  data      String
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+}
+
+model Player {
+  id        String   @id
+  auctionId String
+  data      String
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+}
+
+// One row per auction (id = auction id): player on the table, bid history, host view, events
+model LiveState {
+  id   String @id
+  data String
+}
+
+model UnlockRequest {
+  id         String   @id
+  ownerEmail String
+  data       String
+  createdAt  DateTime @default(now())
+}
+
+// Player self-registration through an auction's public sign-up link
+model Registration {
+  id        String   @id @default(cuid())
+  auctionId String
+  status    String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  data      String
+  createdAt DateTime @default(now())
+
+  @@index([auctionId])
+}

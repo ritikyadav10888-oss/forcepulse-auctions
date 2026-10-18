@@ -1,0 +1,224 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #f8f9fa;
+    color: #0f172a;
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  }
+}
+
+/* TPA Specific Font Classes */
+.font-bebas {
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.05em;
+}
+
+/* Custom Scrollbar for sleek SaaS feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #84cc16;
+}
+
+/* Glassmorphism & TPA Cards */
+.tpa-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+}
+
+.tpa-dark-card {
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+
+/* Pulse animation for live indicators */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(132, 204, 22, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(132, 204, 22, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(132, 204, 22, 0);
+  }
+}
+
+.live-pulse-green {
+  animation: pulse-ring 2s infinite;
+}
+
+/* Bid bump highlight */
+@keyframes bid-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); color: #84cc16; }
+  100% { transform: scale(1); }
+}
+
+.animate-bid-pop {
+  animation: bid-pop 0.3s ease-out;
+}
+
+/* ---------- Host screen animations ---------- */
+@keyframes fp-slide-in-left {
+  from { opacity: 0; transform: translateX(-80px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fp-rise {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fp-bid-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes fp-flash {
+  0% { box-shadow: 0 0 0 0 rgba(132, 204, 22, 0.75); border-color: #a3e635; }
+  100% { box-shadow: 0 0 0 28px rgba(132, 204, 22, 0); }
+}
+@keyframes fp-stamp {
+  0% { opacity: 0; transform: rotate(-12deg) scale(3); }
+  60% { opacity: 1; transform: rotate(-12deg) scale(0.92); }
+  100% { opacity: 1; transform: rotate(-12deg) scale(1); }
+}
+@keyframes fp-banner-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fp-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+@keyframes fp-glow {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes fp-team-in {
+  0% { opacity: 0; transform: translateX(80px) scale(0.92); }
+  60% { opacity: 1; transform: translateX(-6px) scale(1.02); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes fp-ping {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@keyframes fp-card-in {
+  0% { opacity: 0; transform: perspective(1400px) rotateY(-70deg) scale(0.85); }
+  60% { opacity: 1; transform: perspective(1400px) rotateY(6deg) scale(1.01); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes fp-photo-zoom {
+  from { transform: scale(1.25); filter: brightness(1.6); }
+  to { transform: scale(1); filter: none; }
+}
+/* Sweeps in, holds, then slides out so the card is fully visible */
+@keyframes fp-sweep {
+  0% { opacity: 0; transform: translate(-100%, -50%); }
+  18% { opacity: 1; transform: translate(0, -50%); }
+  70% { opacity: 1; transform: translate(0, -50%); }
+  100% { opacity: 0; transform: translate(100%, -50%); }
+}
+.fp-card-in { animation: fp-card-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: center; }
+.fp-photo-zoom { animation: fp-photo-zoom 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-sweep { animation: fp-sweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s both; }
+
+.fp-team-in { animation: fp-team-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-ping { animation: fp-ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite; }
+/* ---------- Bid-up moments ---------- */
+/* Light sweep across the bidding bar on every new bid */
+@keyframes fp-shine {
+  from { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
+  20% { opacity: 1; }
+  to { transform: translateX(320%) skewX(-20deg); opacity: 0; }
+}
+.fp-shine { animation: fp-shine 0.9s cubic-bezier(0.4, 0, 0.2, 1) both; }
+/* "+₹0.25 Cr" tag that floats up off the price */
+@keyframes fp-raise-float {
+  0% { opacity: 0; transform: translateY(14px) scale(0.7); }
+  20% { opacity: 1; transform: translateY(0) scale(1.1); }
+  75% { opacity: 1; transform: translateY(-22px) scale(1); }
+  100% { opacity: 0; transform: translateY(-40px) scale(0.95); }
+}
+.fp-raise-float { animation: fp-raise-float 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* Sparks bursting out of the price; each spark sets --a (its angle) */
+@keyframes fp-spark {
+  from { opacity: 1; transform: rotate(var(--a)) translateX(10px) scale(1); }
+  to { opacity: 0; transform: rotate(var(--a)) translateX(110px) scale(0.2); }
+}
+.fp-spark { animation: fp-spark 0.85s cubic-bezier(0.1, 0.7, 0.3, 1) both; }
+/* Price swells on each bid, then settles */
+@keyframes fp-price-thump {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.fp-price-thump { animation: fp-price-thump 0.55s cubic-bezier(0.2, 0.8, 0.2, 1); display: inline-block; transform-origin: right center; }
+/* Soft breathing glow while bidding is open */
+@keyframes fp-price-glow {
+  0%, 100% { text-shadow: 0 0 18px var(--fp-glow, rgba(132, 204, 22, 0.25)); }
+  50% { text-shadow: 0 0 42px var(--fp-glow, rgba(132, 204, 22, 0.6)); }
+}
+.fp-price-glow { animation: fp-price-glow 2.2s ease-in-out infinite; }
+/* Bar border breathing while an asking bid waits for a taker */
+@keyframes fp-asking {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.0), 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0.25), 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+}
+.fp-asking { animation: fp-asking 1.4s ease-in-out infinite; }
+/* Raised hand on the team holding the bid: pops up, then waves */
+@keyframes fp-hand-raise {
+  0% { opacity: 0; transform: translateY(10px) scale(0.4); }
+  40% { opacity: 1; transform: translateY(-3px) scale(1.15); }
+  55% { transform: rotate(-16deg); }
+  70% { transform: rotate(14deg); }
+  85% { transform: rotate(-8deg); }
+  100% { opacity: 1; transform: none; }
+}
+.fp-hand-raise { animation: fp-hand-raise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: 50% 90%; }
+
+.fp-slide-in-left { animation: fp-slide-in-left 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-rise { animation: fp-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-bid-pop { animation: fp-bid-pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; display: inline-block; }
+.fp-flash { animation: fp-flash 0.8s ease-out; }
+.fp-stamp { animation: fp-stamp 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-banner-up { animation: fp-banner-up 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fp-shake { animation: fp-shake 0.35s ease-in-out infinite; }
+.fp-glow { animation: fp-glow 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-sweep, .fp-shine, .fp-spark, .fp-raise-float { display: none; }
+  .fp-slide-in-left, .fp-rise, .fp-bid-pop, .fp-flash, .fp-stamp, .fp-banner-up, .fp-shake, .fp-glow, .fp-team-in, .fp-ping, .fp-card-in, .fp-photo-zoom, .fp-hand-raise,
+  .fp-price-thump, .fp-price-glow, .fp-asking {
+    animation: none !important;
+  }
+}
+
+/* Scrollable player grids on the host screens: thin lime scrollbar on the dark background */
+.fp-scroll { scrollbar-width: thin; scrollbar-color: #84cc16 #1e293b; overscroll-behavior: contain; }
+.fp-scroll::-webkit-scrollbar { width: 10px; }
+.fp-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 9999px; }
+.fp-scroll::-webkit-scrollbar-thumb { background: #84cc16; border-radius: 9999px; }
