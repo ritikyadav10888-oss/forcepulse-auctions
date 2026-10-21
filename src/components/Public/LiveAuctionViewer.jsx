@@ -198,216 +198,6 @@ export const LiveAuctionViewer = ({ onBack }) => {
             </div>
           </div>
 
-          {/* Sub-Navigation Tabs matching TPA (`TEAMS`, `UPCOMING PLAYERS`, `SOLD PLAYERS`, `UNSOLD PLAYERS`) */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => setActiveTab('TEAMS')}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-                  activeTab === 'TEAMS'
-                    ? 'bg-lime-500 text-slate-950 shadow-sm'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                TEAMS ({teams.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('UPCOMING')}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-                  activeTab === 'UPCOMING'
-                    ? 'bg-lime-500 text-slate-950 shadow-sm'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                UPCOMING PLAYERS ({upcomingPlayers.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('SOLD')}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-                  activeTab === 'SOLD'
-                    ? 'bg-lime-500 text-slate-950 shadow-sm'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                SOLD PLAYERS ({soldPlayers.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab('UNSOLD')}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-                  activeTab === 'UNSOLD'
-                    ? 'bg-lime-500 text-slate-950 shadow-sm'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                UNSOLD PLAYERS ({unsoldPlayers.length})
-              </button>
-            </div>
-
-            {/* Team Quick Jump Pill Filter */}
-            {activeTab === 'TEAMS' && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                <span className="text-xs font-extrabold text-slate-400 uppercase shrink-0">Filter Team:</span>
-                <button
-                  onClick={() => setSelectedTeamFilter('ALL')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all shrink-0 ${
-                    selectedTeamFilter === 'ALL'
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  ALL
-                </button>
-                {teams.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setSelectedTeamFilter(t.id)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all shrink-0 flex items-center gap-1.5 ${
-                      selectedTeamFilter === t.id
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    <img src={t.logo} alt={t.name} className="w-3.5 h-3.5 rounded-full object-cover" />
-                    <span>{t.shortCode}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* TEAMS VIEW: 4 Purse Metrics per Team matching TPA (`TOTAL PURSE`, `USED`, `BALANCE`, `PLAYERS`) */}
-          {activeTab === 'TEAMS' && (
-            <div className="space-y-6">
-              {displayTeams.map((team) => {
-                const totalPurse = team.initialPurse || 100;
-                const remainingPurse = team.purseRemaining;
-                const usedPurse = Number((totalPurse - remainingPurse).toFixed(2));
-                const squad = players.filter(p => p.soldToTeamId === team.id);
-
-                return (
-                  <div
-                    key={team.id}
-                    className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4"
-                  >
-                    {/* Team Header */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div className="flex items-center gap-3">
-                        <img src={team.logo} alt={team.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-sm" />
-                        <div>
-                          <h3 className="font-extrabold text-base text-slate-900">{team.name} ({team.shortCode})</h3>
-                          <span className="text-xs text-slate-500 font-semibold">Coach: {team.coach}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* TPA 4-Box Purse Metrics */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">TOTAL PURSE</span>
-                        <span className="text-sm font-black text-slate-900">{formatMoney(totalPurse)}</span>
-                      </div>
-
-                      <div className="bg-red-50 border border-red-200 p-3 rounded-2xl">
-                        <span className="text-[10px] font-extrabold text-red-500 uppercase tracking-wider block">USED</span>
-                        <span className="text-sm font-black text-red-600">{formatMoney(usedPurse)}</span>
-                      </div>
-
-                      <div className="bg-lime-50 border border-lime-300 p-3 rounded-2xl">
-                        <span className="text-[10px] font-extrabold text-lime-800 uppercase tracking-wider block">BALANCE</span>
-                        <span className="text-sm font-black text-lime-700">{formatMoney(remainingPurse)}</span>
-                      </div>
-
-                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">PLAYERS</span>
-                        <span className="text-sm font-black text-indigo-600">{squad.length} / {activeAuction?.maxSquadSize || 25}</span>
-                      </div>
-                    </div>
-
-                    {/* Squad Table */}
-                    {squad.length === 0 ? (
-                      <div className="text-xs text-slate-400 italic text-center py-4 bg-slate-50 rounded-xl">
-                        No players acquired yet.
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
-                            <tr>
-                              <th className="p-3">#</th>
-                              <th className="p-3">Player Name</th>
-                              <th className="p-3">Category</th>
-                              <th className="p-3">Role</th>
-                              <th className="p-3 text-right">Sold Price</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                            {squad.map((player, idx) => (
-                              <tr key={player.id} className="hover:bg-slate-50">
-                                <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
-                                <td className="p-3 font-bold text-slate-900 flex items-center gap-2">
-                                  <img src={player.image} alt={player.name} className="w-6 h-6 rounded-full object-cover" />
-                                  <span>{player.name}</span>
-                                </td>
-                                <td className="p-3">
-                                  <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-bold">
-                                    {player.category}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-slate-500">{player.role}</td>
-                                <td className="p-3 text-right font-black text-lime-700">
-                                  {formatMoney(player.soldPrice)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* PLAYERS LIST VIEW (UPCOMING / SOLD / UNSOLD) */}
-          {activeTab !== 'TEAMS' && (
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-              <h3 className="font-extrabold text-slate-900 text-base uppercase">
-                {activeTab} PLAYERS LIST
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {(activeTab === 'SOLD' ? soldPlayers : activeTab === 'UNSOLD' ? unsoldPlayers : upcomingPlayers).map((player) => {
-                  const soldTeam = teams.find(t => t.id === player.soldToTeamId);
-                  return (
-                    <div key={player.id} className="border border-slate-200 rounded-2xl p-4 flex items-center gap-3 bg-slate-50">
-                      <img src={player.image} alt={player.name} className="w-12 h-14 rounded-xl object-cover border border-slate-200" />
-                      <div className="flex-1 min-w-0">
-                        <span className="bg-orange-500 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
-                          {player.category}
-                        </span>
-                        <h4 className="font-extrabold text-slate-900 text-sm truncate mt-0.5">{player.name}</h4>
-                        <p className="text-xs text-slate-500 truncate">{player.role}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] text-slate-400 font-bold block">Base: {formatMoney(player.basePrice)}</span>
-                        {player.status === 'SOLD' ? (
-                          <span className="text-xs font-black text-lime-700">{formatMoney(player.soldPrice)} ({soldTeam?.shortCode})</span>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-700">{player.status}</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
         </div>
 
         {/* Right Column: Live Bid Ticker Stream (4 Cols) */}
@@ -456,6 +246,216 @@ export const LiveAuctionViewer = ({ onBack }) => {
         </div>
 
       </div>
+
+      {/* Sub-Navigation Tabs matching TPA (`TEAMS`, `UPCOMING PLAYERS`, `SOLD PLAYERS`, `UNSOLD PLAYERS`) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setActiveTab('TEAMS')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
+              activeTab === 'TEAMS'
+                ? 'bg-lime-500 text-slate-950 shadow-sm'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            TEAMS ({teams.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('UPCOMING')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
+              activeTab === 'UPCOMING'
+                ? 'bg-lime-500 text-slate-950 shadow-sm'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            UPCOMING PLAYERS ({upcomingPlayers.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('SOLD')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
+              activeTab === 'SOLD'
+                ? 'bg-lime-500 text-slate-950 shadow-sm'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            SOLD PLAYERS ({soldPlayers.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('UNSOLD')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
+              activeTab === 'UNSOLD'
+                ? 'bg-lime-500 text-slate-950 shadow-sm'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            UNSOLD PLAYERS ({unsoldPlayers.length})
+          </button>
+        </div>
+
+        {/* Team Quick Jump Pill Filter */}
+        {activeTab === 'TEAMS' && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            <span className="text-xs font-extrabold text-slate-400 uppercase shrink-0">Filter Team:</span>
+            <button
+              onClick={() => setSelectedTeamFilter('ALL')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all shrink-0 ${
+                selectedTeamFilter === 'ALL'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              ALL
+            </button>
+            {teams.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedTeamFilter(t.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold uppercase transition-all shrink-0 flex items-center gap-1.5 ${
+                  selectedTeamFilter === t.id
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <img src={t.logo} alt={t.name} className="w-3.5 h-3.5 rounded-full object-cover" />
+                <span>{t.shortCode}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* TEAMS VIEW: 4 Purse Metrics per Team matching TPA (`TOTAL PURSE`, `USED`, `BALANCE`, `PLAYERS`) */}
+      {activeTab === 'TEAMS' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 items-start">
+          {displayTeams.map((team) => {
+            const totalPurse = team.initialPurse || 100;
+            const remainingPurse = team.purseRemaining;
+            const usedPurse = Number((totalPurse - remainingPurse).toFixed(2));
+            const squad = players.filter(p => p.soldToTeamId === team.id);
+
+            return (
+              <div
+                key={team.id}
+                className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4"
+              >
+                {/* Team Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-3">
+                    <img src={team.logo} alt={team.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-sm" />
+                    <div>
+                      <h3 className="font-extrabold text-base text-slate-900">{team.name} ({team.shortCode})</h3>
+                      <span className="text-xs text-slate-500 font-semibold">Coach: {team.coach}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TPA 4-Box Purse Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">TOTAL PURSE</span>
+                    <span className="text-sm font-black text-slate-900">{formatMoney(totalPurse)}</span>
+                  </div>
+
+                  <div className="bg-red-50 border border-red-200 p-3 rounded-2xl">
+                    <span className="text-[10px] font-extrabold text-red-500 uppercase tracking-wider block">USED</span>
+                    <span className="text-sm font-black text-red-600">{formatMoney(usedPurse)}</span>
+                  </div>
+
+                  <div className="bg-lime-50 border border-lime-300 p-3 rounded-2xl">
+                    <span className="text-[10px] font-extrabold text-lime-800 uppercase tracking-wider block">BALANCE</span>
+                    <span className="text-sm font-black text-lime-700">{formatMoney(remainingPurse)}</span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">PLAYERS</span>
+                    <span className="text-sm font-black text-indigo-600">{squad.length} / {activeAuction?.maxSquadSize || 25}</span>
+                  </div>
+                </div>
+
+                {/* Squad Table */}
+                {squad.length === 0 ? (
+                  <div className="text-xs text-slate-400 italic text-center py-4 bg-slate-50 rounded-xl">
+                    No players acquired yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                        <tr>
+                          <th className="p-3">#</th>
+                          <th className="p-3">Player Name</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Role</th>
+                          <th className="p-3 text-right">Sold Price</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                        {squad.map((player, idx) => (
+                          <tr key={player.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                            <td className="p-3 font-bold text-slate-900 flex items-center gap-2">
+                              <img src={player.image} alt={player.name} className="w-6 h-6 rounded-full object-cover" />
+                              <span>{player.name}</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-bold">
+                                {player.category}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-500">{player.role}</td>
+                            <td className="p-3 text-right font-black text-lime-700">
+                              {formatMoney(player.soldPrice)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* PLAYERS LIST VIEW (UPCOMING / SOLD / UNSOLD) */}
+      {activeTab !== 'TEAMS' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+          <h3 className="font-extrabold text-slate-900 text-base uppercase">
+            {activeTab} PLAYERS LIST
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {(activeTab === 'SOLD' ? soldPlayers : activeTab === 'UNSOLD' ? unsoldPlayers : upcomingPlayers).map((player) => {
+              const soldTeam = teams.find(t => t.id === player.soldToTeamId);
+              return (
+                <div key={player.id} className="border border-slate-200 rounded-2xl p-4 flex items-center gap-3 bg-slate-50">
+                  <img src={player.image} alt={player.name} className="w-12 h-14 rounded-xl object-cover border border-slate-200" />
+                  <div className="flex-1 min-w-0">
+                    <span className="bg-orange-500 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+                      {player.category}
+                    </span>
+                    <h4 className="font-extrabold text-slate-900 text-sm truncate mt-0.5">{player.name}</h4>
+                    <p className="text-xs text-slate-500 truncate">{player.role}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] text-slate-400 font-bold block">Base: {formatMoney(player.basePrice)}</span>
+                    {player.status === 'SOLD' ? (
+                      <span className="text-xs font-black text-lime-700">{formatMoney(player.soldPrice)} ({soldTeam?.shortCode})</span>
+                    ) : (
+                      <span className="text-xs font-bold text-slate-700">{player.status}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
     </div>
   );

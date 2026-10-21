@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuction, isPublicAuction } from '../../context/AuctionContext';
-import { ArrowLeft, Calendar, Tv, Trophy, Users, Wallet, Globe2, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar, Trophy, Users, Wallet, Globe2, Clock } from 'lucide-react';
 import { StatusBadge } from './BrowseAuctions';
 import { LiveAuctionViewer } from './LiveAuctionViewer';
 import { SquadView } from './SquadView';
 import { PlayerCatalog } from './PlayerCatalog';
-import { screenUrl } from '../Admin/ScreensManager';
 import { formatMoney } from '../../services/money';
 
 const TAB_LABELS = { ARENA: 'Live Arena', OVERVIEW: 'Overview', RESULTS: 'Sold & Unsold', SQUADS: 'Teams & Squads', PLAYERS: 'Players' };
@@ -247,15 +246,6 @@ export const AuctionDetail = ({ onBack }) => {
             )}
             {auction.description && <p className="max-w-2xl text-sm text-slate-600">{auction.description}</p>}
           </div>
-
-          {auction.status === 'LIVE' && (
-            <button
-              onClick={() => window.open(screenUrl('host', auction.id), `fp-host-${auction.id}`)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
-            >
-              <Tv className="w-4 h-4 text-lime-400" /> Full-screen view
-            </button>
-          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

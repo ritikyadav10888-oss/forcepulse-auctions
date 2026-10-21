@@ -331,13 +331,16 @@ export const AuctionProvider = ({ children }) => {
     return prices.length ? Math.min(...prices) : 0;
   })();
 
-  // Infinity when the auction has unlimited team purse; the whole purse when max-bid calculation is off
+  // Highest price any single player can go for (0 = no limit)
+  const playerBidCap = Number(activeAuction?.maxBidPerPlayer) || Infinity;
+
+  // Infinity when the auction has unlimited team purse and no player cap; the whole purse when max-bid calculation is off
   const getTeamMaxBid = (team) => {
-    if (activeAuction?.unlimitedPurse) return Infinity;
-    if (activeAuction?.calcMaxBid === false) return round2(Math.max(0, team.purseRemaining));
+    if (activeAuction?.unlimitedPurse) return playerBidCap;
+    if (activeAuction?.calcMaxBid === false) return round2(Math.min(playerBidCap, Math.max(0, team.purseRemaining)));
     const minSquad = Number(activeAuction?.minSquadSize || 0);
     const slotsToReserve = Math.max(0, minSquad - team.squadCount - 1);
-    return round2(Math.max(0, team.purseRemaining - slotsToReserve * reservePerSlot));
+    return round2(Math.min(playerBidCap, Math.max(0, team.purseRemaining - slotsToReserve * reservePerSlot)));
   };
 
   const canTeamBid = (teamId, amount, player = currentPlayer) => {
@@ -353,6 +356,7 @@ export const AuctionProvider = ({ children }) => {
     if (player.isOverseas && team.overseasCount >= maxOverseas) {
       return { ok: false, reason: `${team.name} has reached the overseas limit (${maxOverseas}).` };
     }
+    if (amount > playerBidCap) return { ok: false, reason: `Bids are capped at ${formatMoney(playerBidCap)} per player.` };
     if (activeAuction?.unlimitedPurse) return { ok: true };
     if (amount > team.purseRemaining) return { ok: false, reason: `${team.name} does not have enough purse (${formatMoney(team.purseRemaining)} left).` };
     const maxBid = getTeamMaxBid(team);

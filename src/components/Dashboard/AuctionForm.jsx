@@ -36,6 +36,7 @@ const formFrom = (a) => ({
   maxSquadSize: a?.maxSquadSize ?? 15,
   minSquadSize: a?.minSquadSize ?? 11,
   maxOverseas: a?.maxOverseas ?? 4,
+  maxBidPerPlayer: a?.maxBidPerPlayer || '',
   unsoldPolicy: a?.unsoldPolicy || 'REAUCTION',
   unlimitedPurse: !!a?.unlimitedPurse,
   calcMaxBid: a?.calcMaxBid !== false,
@@ -179,6 +180,7 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
       maxSquadSize: max,
       minSquadSize: min,
       maxOverseas: Number(form.maxOverseas),
+      maxBidPerPlayer: Number(form.maxBidPerPlayer) || 0,
       unsoldPolicy: form.unsoldPolicy,
       unlimitedPurse: form.unlimitedPurse,
       calcMaxBid: form.calcMaxBid,
@@ -198,7 +200,12 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
     }
 
     if (!editAuction(auction.id, isSuperAdmin ? { ...data, publicPageEnabled: form.publicPageEnabled } : data)) return;
-    if (applyPurse) teams.forEach(t => editTeam(t.id, { initialPurse: Number(form.purseLimit) }));
+    // Teams still on the old default purse follow the new one; the checkbox also moves teams with their own purse
+    const oldPurse = Number(auction.purseLimit);
+    const newPurse = Number(form.purseLimit);
+    teams
+      .filter(t => Number(t.initialPurse) !== newPurse && (applyPurse || Number(t.initialPurse) === oldPurse))
+      .forEach(t => editTeam(t.id, { initialPurse: newPurse }));
     if (isSuperAdmin) {
       if (form.ownerEmail && form.ownerEmail !== auction.ownerEmail) assignAuction(auction.id, form.ownerEmail);
       if (form.plan !== 'AUTO' && form.plan !== auction.plan) setAuctionPlan(auction.id, form.plan);
@@ -308,6 +315,9 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
             <Field label="Max overseas players per team">
               <input type="number" min="0" value={form.maxOverseas} onChange={set('maxOverseas')} className={input} />
             </Field>
+            <Field label="Max bid per player (Cr)" hint="empty = no limit">
+              <input type="number" min="0" step="0.05" value={form.maxBidPerPlayer} onChange={set('maxBidPerPlayer')} className={input} />
+            </Field>
             <Toggle checked={form.unlimitedPurse} onChange={setVal('unlimitedPurse')} label="Unlimited team purse" hint="Teams can bid without a purse limit" />
             <Toggle checked={form.calcMaxBid} onChange={setVal('calcMaxBid')} disabled={form.unlimitedPurse} label="Calculate max bid" hint="Keep money aside to complete the minimum squad" />
             <Toggle checked={form.allowSameTeamRebid} onChange={setVal('allowSameTeamRebid')} label="Same team can raise its own bid" />
@@ -323,7 +333,7 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
           {isEdit && teams.length > 0 && (
             <label className="mt-5 inline-flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" checked={applyPurse} onChange={(e) => setApplyPurse(e.target.checked)} />
-              Also set every team's purse to {formatMoney(form.purseLimit)}
+              Also set teams with their own purse to {formatMoney(form.purseLimit)} (teams on the default purse always follow it)
             </label>
           )}
 

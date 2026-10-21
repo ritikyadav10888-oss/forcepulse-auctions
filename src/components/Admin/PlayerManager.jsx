@@ -5,6 +5,10 @@ import { BulkImport } from './BulkImport';
 import { Plus, Edit2, Trash2, UserPlus, FileSpreadsheet, Search, Undo2 } from 'lucide-react';
 import { formatMoney } from '../../services/money';
 
+// Extra career stats shown on the "Player Profile" host design (optional, blank = hidden)
+const PROFILE_STAT_FIELDS = [['highestScore', 'Highest score', '1'], ['average', 'Average', '0.01'], ['strikeRate', 'Strike rate', '0.01'], ['fifties', '50s', '1'], ['hundreds', '100s', '1']];
+const EMPTY_PROFILE_STATS = Object.fromEntries(PROFILE_STAT_FIELDS.map(([k]) => [k, '']));
+
 export const PlayerManager = () => {
   const { players, addPlayer, editPlayer, deletePlayer, releasePlayer, activeAuction, canSetup } = useAuction();
   const infoLabels = (activeAuction?.playerInfoLabels || []).map(l => (l || '').trim()).filter(Boolean);
@@ -26,6 +30,7 @@ export const PlayerManager = () => {
     matches: 50,
     runs: 1500,
     wickets: 0,
+    ...EMPTY_PROFILE_STATS,
     age: '',
     battingStyle: '',
     bowlingStyle: '',
@@ -47,6 +52,7 @@ export const PlayerManager = () => {
       matches: 50,
       runs: 1500,
       wickets: 0,
+      ...EMPTY_PROFILE_STATS,
       age: '',
       battingStyle: '',
       bowlingStyle: '',
@@ -70,6 +76,7 @@ export const PlayerManager = () => {
       matches: player.stats?.matches || 0,
       runs: player.stats?.runs || 0,
       wickets: player.stats?.wickets || 0,
+      ...Object.fromEntries(PROFILE_STAT_FIELDS.map(([k]) => [k, player.stats?.[k] ?? ''])),
       age: player.age || '',
       battingStyle: player.battingStyle || '',
       bowlingStyle: player.bowlingStyle || '',
@@ -100,7 +107,8 @@ export const PlayerManager = () => {
         ...(editingPlayer?.stats || {}),
         matches: Number(formData.matches),
         runs: Number(formData.runs),
-        wickets: Number(formData.wickets)
+        wickets: Number(formData.wickets),
+        ...Object.fromEntries(PROFILE_STAT_FIELDS.map(([k]) => [k, formData[k] === '' ? '' : Number(formData[k])]))
       }
     };
 
@@ -476,6 +484,17 @@ export const PlayerManager = () => {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900"
                   />
                 </div>
+                {PROFILE_STAT_FIELDS.map(([k, label, step]) => (
+                  <div key={k}>
+                    <label className="block mb-1">{label}</label>
+                    <input
+                      type="number" min="0" step={step}
+                      value={formData[k]}
+                      onChange={(e) => setFormData({ ...formData, [k]: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900"
+                    />
+                  </div>
+                ))}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
