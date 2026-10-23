@@ -74,7 +74,7 @@ const toBool = (v) => ['yes', 'y', 'true', '1', 'overseas'].includes(String(v).t
 
 
 // Returns { items, errors } — errors name the CSV line so the admin can fix the sheet
-export const playersFromCSV = (text, { defaultCategory = 'Batsman', defaultCountry = 'India' } = {}) => {
+export const playersFromCSV = (text, { defaultCategory = 'Batsman', defaultCountry = 'India', categoryPrices = {} } = {}) => {
   const { records, index } = mapRows(parseCSV(text), PLAYER_COLUMNS);
   if (!index || index.name < 0) return { items: [], errors: ['The first row must be a header with at least a "Name" column.'] };
   const items = [];
@@ -82,8 +82,9 @@ export const playersFromCSV = (text, { defaultCategory = 'Batsman', defaultCount
   records.forEach((r, i) => {
     const line = i + 2;
     if (!r.name) { errors.push(`Line ${line}: missing player name, skipped.`); return; }
-    const basePrice = toNumber(r.basePrice, NaN);
-    if (!(basePrice > 0)) { errors.push(`Line ${line} (${r.name}): base price "${r.basePrice}" is not a number above 0, skipped.`); return; }
+    // A blank price takes the category's base price
+    const basePrice = toNumber(r.basePrice, Number(categoryPrices[r.category || defaultCategory]) || NaN);
+    if (!(basePrice > 0)) { errors.push(`Line ${line} (${r.name}): base price "${r.basePrice}" is not a number above 0, and its category has no base price; skipped.`); return; }
     const country = r.country || defaultCountry;
     items.push({
       name: r.name,

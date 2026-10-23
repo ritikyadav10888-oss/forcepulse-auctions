@@ -59,6 +59,31 @@ const flush = () => {
 // ---------- Live feed ----------
 let socket = null;
 const watched = new Set();
+
+// New version deployed while this page was open: screens (?screen=...) keep all their state on the server, so they
+// simply reload; other pages may hold an unsaved form, so they get a bar with a Reload button instead.
+let loadedVersion = null;
+const onVersion = (v) => {
+  if (!loadedVersion) { loadedVersion = v; return; }
+  if (v === loadedVersion || typeof window === 'undefined') return;
+  loadedVersion = v;
+  if (new URLSearchParams(window.location.search).has('screen')) {
+    setTimeout(() => window.location.reload(), 1500 + Math.random() * 2000);
+    return;
+  }
+  if (document.getElementById('fp-new-version')) return;
+  const bar = document.createElement('div');
+  bar.id = 'fp-new-version';
+  bar.setAttribute('role', 'status');
+  bar.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:12px;background:#0f172a;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.35)';
+  bar.textContent = 'A new version of Force Pulse is ready.';
+  const btn = document.createElement('button');
+  btn.textContent = 'Reload';
+  btn.style.cssText = 'padding:6px 12px;border-radius:8px;background:#ffb000;color:#0f172a;font-weight:800;border:0;cursor:pointer';
+  btn.onclick = () => window.location.reload();
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+};
 export const connectLive = ({ onSync, onRegistrations, onReconnect }) => {
   socket?.disconnect();
   socket = io({ withCredentials: true });
@@ -68,6 +93,7 @@ export const connectLive = ({ onSync, onRegistrations, onReconnect }) => {
   socket.io.on('reconnect', () => onReconnect?.());
   socket.on('sync', (msg) => { if (msg.origin !== clientId) onSync(msg); });
   socket.on('registrations', (msg) => onRegistrations?.(msg));
+  socket.on('version', onVersion);
   return () => { socket?.disconnect(); socket = null; };
 };
 

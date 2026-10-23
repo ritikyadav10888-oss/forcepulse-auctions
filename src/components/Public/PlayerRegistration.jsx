@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../../services/serverSync';
-import { uploadImage } from '../../services/imageUpload';
+import { uploadImage, IMAGE_SIZES } from '../../services/imageUpload';
 import { DEFAULT_PLAYER_PHOTO } from '../../config/placeholders';
 import { Camera, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -26,7 +26,7 @@ export const PlayerRegistration = ({ auction, onBack }) => {
     setUploading(true);
     setError('');
     try {
-      const url = await uploadImage(file, { maxWidth: 600, maxHeight: 750 });
+      const url = await uploadImage(file, IMAGE_SIZES.playerPhoto);
       setForm(f => ({ ...f, image: url }));
     } catch (err) {
       setError(err.message);

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { soundManager } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
+import { useSessionState } from '../hooks/useSessionState';
 import { FREE_PLAN, getPlan, planForTeams } from '../config/forcePulse';
 import { DEFAULT_TEAM_LOGO } from '../config/placeholders';
 import { api, connectLive, diffCollection, queueChange, setSaveErrorHandler, watchAuctions } from '../services/serverSync';
@@ -24,13 +25,26 @@ const DEFAULT_LIVE = {
   hostView: 'AUTO' // what the Host Screen shows: AUTO (yet-to-start / player on the floor), UPCOMING, SOLD, UNSOLD, TEAMS
 };
 
+// Seconds left on the bid clock, ticking; null when there is no clock
+export const useSecondsLeft = (clock) => {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!clock) return undefined;
+    const t = setInterval(() => setTick(n => n + 1), 250);
+    return () => clearInterval(t);
+  }, [clock?.endsAt]);
+  return clock ? Math.max(0, Math.ceil((clock.endsAt - Date.now()) / 1000)) : null;
+};
+
 // Settings the organiser can change while running any auction, including Force Pulse-managed ones
-export const RUN_SETTING_KEYS = ['status', 'allowSameTeamRebid', 'playerOrder', 'hostDesign', 'registrationOpen'];
+export const RUN_SETTING_KEYS = ['status', 'allowSameTeamRebid', 'playerOrder', 'hostDesign', 'hostBackground', 'hostBackgroundImage', 'registrationOpen', 'youtubeUrl'];
 
 export const getRunSettings = (auction) => ({
   allowSameTeamRebid: !!auction?.allowSameTeamRebid, // leading team may raise its own bid
   playerOrder: auction?.playerOrder || 'SEQUENTIAL', // SEQUENTIAL by set, or RANDOM draw
-  hostDesign: auction?.hostDesign || 'card'
+  hostDesign: auction?.hostDesign || 'broadcast',
+  hostBackground: auction?.hostBackground || 'night', // preset backdrop behind the host screen, or 'image'
+  hostBackgroundImage: auction?.hostBackgroundImage || '' // uploaded backdrop used when hostBackground is 'image'
 });
 
 export const HOST_VIEWS = [
@@ -40,7 +54,8 @@ export const HOST_VIEWS = [
   ['UNSOLD', 'Unsold'],
   ['TEAMS', 'Teams & Purse'],
   ['LUCKY_DRAW', 'Team Lucky Draw'],
-  ['UPDATES', 'Auction Updates']
+  ['UPDATES', 'Auction Updates'],
+  ['TITLE', 'Title only']
 ];
 
 // Auctions, teams, players, live state and requests live on the server (see lib/server/store.js):
@@ -102,11 +117,23 @@ const useSyncedState = (name, initial, isMap = false) => {
 // Public page shows only once Force Pulse has verified the auction (older auctions without the flag are public)
 export const isPublicAuction = (auction) => !!auction && auction.publicPageEnabled !== false;
 
+// What an organiser may still change on a Force Pulse-managed auction (rules, purse and teams stay with Force Pulse)
+export const OWNER_EDIT_KEYS = ['categories', 'categoryPrices', 'tournamentLogo', 'banner'];
+
+// The auction's own starting price: a fifth of what each squad slot can spend on average, to the nearest lakh
+export const suggestedBasePrice = (auction) => {
+  const purse = Number(auction?.purseLimit) || 0;
+  const squad = Number(auction?.maxSquadSize) || 11;
+  if (!purse || auction?.unlimitedPurse) return 0.2;
+  return Math.max(0.01, Math.round((purse / squad / 5) * 100) / 100);
+};
+
 export const isManagedAuction = (auction) => !!auction?.managedByForcePulse || getAuctionPlan(auction).id !== FREE_PLAN.id;
 
 const IS_OVERLAY_WINDOW = new URLSearchParams(window.location.search).get('screen') === 'overlay';
 
-const round2 = (n) => Math.round(Number(n) * 100) / 100;
+// Amounts are crore; rounding to 0.0001 Cr keeps bids exact down to 1,000
+const round2 = (n) => Math.round(Number(n) * 10000) / 10000;
 
 const loadJSON = (key, fallback) => {
   try {
@@ -147,10 +174,14 @@ const usePersistentState = (key, fallback, sync = true) => {
 };
 
 // Bid increment slab for a given price, from the auction's own rules
-export const getBidIncrement = (auction, amount) => {
-  const slabs = (auction?.bidIncrements?.length ? auction.bidIncrements : DEFAULT_BID_INCREMENTS)
-    .map(s => ({ maxPrice: s.maxPrice ?? Infinity, step: Number(s.step) }))
-    .sort((a, b) => a.maxPrice - b.maxPrice);
+// A re-auctioned player (round 2+) uses the auction's round-two steps first, where it has them
+const slabsOf = (list) => list.map(s => ({ maxPrice: s.maxPrice ?? Infinity, step: Number(s.step) })).sort((a, b) => a.maxPrice - b.maxPrice);
+export const getBidIncrement = (auction, amount, player) => {
+  if (player?.round >= 2 && auction?.roundTwoIncrements?.length) {
+    const second = slabsOf(auction.roundTwoIncrements).find(s => amount < s.maxPrice);
+    if (second) return second.step;
+  }
+  const slabs = slabsOf(auction?.bidIncrements?.length ? auction.bidIncrements : DEFAULT_BID_INCREMENTS);
   const slab = slabs.find(s => amount < s.maxPrice) || slabs[slabs.length - 1];
   return slab.step;
 };
@@ -159,7 +190,7 @@ export const getBidIncrement = (auction, amount) => {
 export const getNextBidAmount = (auction, player) => {
   if (!player) return 0;
   if (!player.highestBidderTeamId) return round2(player.basePrice);
-  return round2(player.currentBid + getBidIncrement(auction, player.currentBid));
+  return round2(player.currentBid + getBidIncrement(auction, player.currentBid, player));
 };
 
 const AuctionContext = createContext(null);
@@ -177,8 +208,9 @@ export const AuctionProvider = ({ children }) => {
   const [storedActiveAuctionId, setActiveAuctionId] = usePersistentState(ACTIVE_AUCTION_KEY, null, false);
 
   // ---------- Per-tab UI state ----------
-  // Active Role: ADMIN or USER. Every visit opens on the public site; admin view requires a signed-in account
-  const [role, setRoleState] = useState('USER');
+  // Active Role: ADMIN or USER. A new visit opens on the public site; a refresh keeps this tab on the dashboard.
+  // The admin view requires a signed-in account.
+  const [role, setRoleState] = useSessionState('fp:role', 'USER');
   const [autoBotBidding, setAutoBotBidding] = useState(false);
   const [isSoundMuted, setIsSoundMuted] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -193,10 +225,10 @@ export const AuctionProvider = ({ children }) => {
     return true;
   };
 
-  // Sign-out in another tab drops this tab back to the public view
+  // Sign-out in another tab drops this tab back to the public view (once the account has loaded, so a refresh doesn't)
   useEffect(() => {
-    if (!currentUser && role === 'ADMIN') setRoleState('USER');
-  }, [currentUser, role]);
+    if (loaded && !currentUser && role === 'ADMIN') setRoleState('USER');
+  }, [loaded, currentUser, role]);
 
   const showNotice = useCallback((text, type = 'error') => {
     setNotice({ text, type, id: Date.now() });
@@ -301,6 +333,14 @@ export const AuctionProvider = ({ children }) => {
     showNotice(SETUP_DENIED);
     return false;
   };
+  // Organisers edit their own players, categories and team details even on a Force Pulse-managed auction.
+  // The team count stays within the plan, and purse and bidding rules stay with Force Pulse.
+  const canEditPlayers = !!activeAuction && (canSetup || myAuctions.some(a => a.id === activeAuction.id));
+  const guardPlayers = () => {
+    if (canEditPlayers) return true;
+    showNotice(SETUP_DENIED);
+    return false;
+  };
   const lockedMessage = `This auction is locked: ${activeLock.teamCount} teams on the ${activeLock.plan.name} plan (max ${activeLock.teamLimit}). Contact Force Pulse to unlock it.`;
   const auctionPlayers = players.filter(p => p.auctionId === activeAuctionId);
 
@@ -373,6 +413,11 @@ export const AuctionProvider = ({ children }) => {
     ? asking.amount
     : null;
   const setAskingBid = (amount) => updateLive({ askingBid: amount ? { playerId: currentPlayer?.id, amount: round2(amount) } : null });
+  // Bid clock: the auctioneer starts it for the player on the table; every new bid restarts it
+  const clock = liveState.bidClock;
+  const bidClock = currentPlayer?.status === 'CURRENT' && clock?.playerId === currentPlayer.id ? clock : null;
+  const startBidClock = (seconds = 30) => currentPlayer && updateLive({ bidClock: { playerId: currentPlayer.id, seconds, endsAt: Date.now() + seconds * 1000 } });
+  const stopBidClock = () => updateLive({ bidClock: null });
   const runSettings = getRunSettings(activeAuction);
 
   // ---------- Auth ----------
@@ -461,6 +506,7 @@ export const AuctionProvider = ({ children }) => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     updateLive(cur => ({
       askingBid: null,
+      bidClock: cur.bidClock?.playerId === player.id ? { ...cur.bidClock, endsAt: Date.now() + cur.bidClock.seconds * 1000 } : cur.bidClock,
       bidHistory: [
         {
           id: `bid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -469,7 +515,8 @@ export const AuctionProvider = ({ children }) => {
           amount: bidAmount,
           prevBid: player.currentBid,
           prevTeamId: player.highestBidderTeamId,
-          time
+          time,
+          at: Date.now()
         },
         ...cur.bidHistory
       ].slice(0, 30)
@@ -482,6 +529,11 @@ export const AuctionProvider = ({ children }) => {
     const player = currentPlayer;
     if (!player || player.status !== 'CURRENT') return false;
     const last = bidHistory.find(b => b.playerId === player.id);
+    if (!last && player.highestBidderTeamId) {
+      setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, currentBid: p.basePrice, highestBidderTeamId: null } : p));
+      showNotice('Bid withdrawn: back to the base price with no bids.', 'info');
+      return true;
+    }
     if (!last) {
       showNotice('No bids to undo for this player.');
       return false;
@@ -522,6 +574,29 @@ export const AuctionProvider = ({ children }) => {
       : p));
     updateLive({ lastDecidedId: playerId });
     logEvent('UNSOLD', `${target.name} went unsold (base ${formatMoney(target.basePrice)})`, { playerId });
+    return true;
+  };
+
+  const lowerBasePrice = () => {
+    const player = currentPlayer;
+    const reduced = Number(activeAuction?.reducedBasePrice) || 0;
+    if (!player || player.status !== 'CURRENT') { showNotice('Put a player on the table first.'); return false; }
+    if (player.highestBidderTeamId) { showNotice('There is already a bid. Lower the price only when nobody has bid.'); return false; }
+    if (!(reduced > 0) || reduced >= Number(player.basePrice)) { showNotice('This player is already at the lowest base price.'); return false; }
+    setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, originalBasePrice: p.originalBasePrice ?? p.basePrice, basePrice: reduced, currentBid: reduced } : p));
+    logEvent('ROUND', `${player.name}: no bids, base price lowered to ${formatMoney(reduced)}`, { playerId: player.id });
+    return true;
+  };
+
+  // Undo a lowered base price: the player goes back to the base price it started with (still only before any bid)
+  const restoreBasePrice = () => {
+    const player = currentPlayer;
+    const original = Number(player?.originalBasePrice) || 0;
+    if (!player || player.status !== 'CURRENT') { showNotice('Put a player on the table first.'); return false; }
+    if (player.highestBidderTeamId) { showNotice('There is already a bid. Change the base price only when nobody has bid.'); return false; }
+    if (!(original > Number(player.basePrice))) { showNotice('This player is already at the original base price.'); return false; }
+    setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, basePrice: original, currentBid: original } : p));
+    logEvent('ROUND', `${player.name}: base price back to ${formatMoney(original)}`, { playerId: player.id });
     return true;
   };
 
@@ -567,17 +642,26 @@ export const AuctionProvider = ({ children }) => {
 
   // Auctioneer correction: reopen the last sold/unsold player (a sale is undone and the team refunded),
   // with the winning bid still standing so bidding can continue from there
-  const reopenLastPlayer = () => {
-    const lastId = liveState.lastDecidedId;
-    const target = auctionPlayers.find(p => p.id === lastId);
+  // Puts a decided player back on the table: the last one by default, or any sold / unsold player.
+  // A sale is undone with its buyer still leading at the sold price, so bidding carries on (or Undo bid steps back).
+  const reopenLastPlayer = (playerId = liveState.lastDecidedId) => {
+    if (activeLock.locked) {
+      showNotice(lockedMessage);
+      return false;
+    }
+    const target = auctionPlayers.find(p => p.id === playerId);
     if (!target || (target.status !== 'SOLD' && target.status !== 'UNSOLD')) {
       showNotice('There is no previous player to go back to.');
       return false;
     }
+    // A sale without recorded bids (sold to a random team) comes back with no bidder, at the base price
+    const hadBids = bidHistory.some(b => b.playerId === target.id && b.teamId === target.soldToTeamId);
     setPlayers(prev => prev.map(p => {
       if (p.id === target.id) {
         return target.status === 'SOLD'
-          ? { ...p, status: 'CURRENT', currentBid: p.soldPrice, highestBidderTeamId: p.soldToTeamId, soldToTeamId: null, soldPrice: null }
+          ? hadBids
+            ? { ...p, status: 'CURRENT', currentBid: p.soldPrice, highestBidderTeamId: p.soldToTeamId, soldToTeamId: null, soldPrice: null }
+            : { ...p, status: 'CURRENT', currentBid: p.basePrice, highestBidderTeamId: null, soldToTeamId: null, soldPrice: null }
           : { ...p, status: 'CURRENT', currentBid: p.basePrice, highestBidderTeamId: null };
       }
       if (p.auctionId === activeAuctionId && p.status === 'CURRENT') {
@@ -585,7 +669,7 @@ export const AuctionProvider = ({ children }) => {
       }
       return p;
     }));
-    updateLive({ currentPlayerId: target.id, lastDecidedId: null, shuffleAt: null });
+    updateLive(cur => ({ currentPlayerId: target.id, lastDecidedId: cur.lastDecidedId === target.id ? null : cur.lastDecidedId, shuffleAt: null }));
     logEvent('REOPEN', `${target.name} is back on the table${target.status === 'SOLD' ? ` (sale to ${teamName(target.soldToTeamId)} undone)` : ''}`, { playerId: target.id });
     showNotice(`${target.name} is back on the table.`, 'info');
     return true;
@@ -599,7 +683,12 @@ export const AuctionProvider = ({ children }) => {
       return 0;
     }
     const ids = new Set(unsold.map(p => p.id));
-    setPlayers(prev => prev.map(p => ids.has(p.id) ? { ...p, status: 'UPCOMING', currentBid: p.basePrice } : p));
+    const reduced = Number(activeAuction?.reducedBasePrice) || 0;
+    setPlayers(prev => prev.map(p => {
+      if (!ids.has(p.id)) return p;
+      const basePrice = reduced > 0 ? Math.min(reduced, Number(p.originalBasePrice ?? p.basePrice)) : p.basePrice;
+      return { ...p, status: 'UPCOMING', round: (p.round || 1) + 1, originalBasePrice: p.originalBasePrice ?? p.basePrice, basePrice, currentBid: basePrice };
+    }));
     logEvent('ROUND', `Re-auction round: ${unsold.length} unsold players back in the queue`);
     showNotice(`${unsold.length} unsold players are back in the queue.`, 'info');
     return unsold.length;
@@ -669,8 +758,9 @@ export const AuctionProvider = ({ children }) => {
   };
 
   // Admin correction: return a sold player to the pool and refund the team
+  // to 'UNSOLD' (re-auction round) or 'UPCOMING' (yet to auction, as if never called); old bids are cleared
   const releasePlayer = (playerId) => {
-    if (!guardSetup()) return false;
+    if (!guardPlayers()) return false;
     setPlayers(prev => prev.map(p => p.id === playerId
       ? { ...p, status: 'UNSOLD', currentBid: p.basePrice, highestBidderTeamId: null, soldToTeamId: null, soldPrice: null }
       : p));
@@ -874,7 +964,8 @@ export const AuctionProvider = ({ children }) => {
   // Organisers can always open/close their auction (status); rule changes on managed auctions need Force Pulse
   const editAuction = (auctionId, updatedRules) => {
     const auction = auctions.find(a => a.id === auctionId);
-    const onlyRunSettings = Object.keys(updatedRules).every(k => RUN_SETTING_KEYS.includes(k));
+    const ownsIt = myAuctions.some(a => a.id === auctionId);
+    const onlyRunSettings = Object.keys(updatedRules).every(k => RUN_SETTING_KEYS.includes(k) || (ownsIt && OWNER_EDIT_KEYS.includes(k)));
     if (!isSuperAdmin && !onlyRunSettings && isManagedAuction(auction)) {
       showNotice(SETUP_DENIED);
       return false;
@@ -922,8 +1013,9 @@ export const AuctionProvider = ({ children }) => {
   };
 
   const addTeam = (teamData) => {
-    if (!activeAuctionId || !guardSetup() || !makeRoomForTeams(1)) return false;
-    setTeams(prev => [...prev, newTeam(teamData)]);
+    if (!activeAuctionId || !guardPlayers() || !makeRoomForTeams(1)) return false;
+    // Only Force Pulse sets a different purse on a managed auction
+    setTeams(prev => [...prev, newTeam(canSetup ? teamData : { ...teamData, initialPurse: activeAuction?.purseLimit })]);
     return true;
   };
 
@@ -934,17 +1026,70 @@ export const AuctionProvider = ({ children }) => {
     return list.length;
   };
 
+  const categoriesOf = (auction) => auction?.categories || ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'];
+  // Each category may carry a base price: new players in it start there
+  const pricesWith = (changes) => {
+    const next = { ...(activeAuction?.categoryPrices || {}) };
+    Object.entries(changes).forEach(([k, v]) => { if (v > 0) next[k] = v; else delete next[k]; });
+    return next;
+  };
+  const addCategory = (name, basePrice) => {
+    const clean = String(name || '').trim();
+    if (!clean || !guardPlayers()) return false;
+    const list = categoriesOf(activeAuction);
+    return editAuction(activeAuctionId, {
+      categories: list.includes(clean) ? list : [...list, clean],
+      categoryPrices: pricesWith({ [clean]: Number(basePrice) || 0 })
+    });
+  };
+  // Renaming moves that category's players with it
+  const renameCategory = (from, to, basePrice) => {
+    const clean = String(to || '').trim();
+    if (!clean || !guardPlayers()) return false;
+    const list = categoriesOf(activeAuction);
+    if (clean !== from && list.includes(clean)) {
+      showNotice(`There is already a category called ${clean}.`);
+      return false;
+    }
+    const categoryPrices = pricesWith(clean === from ? { [clean]: Number(basePrice) || 0 } : { [from]: 0, [clean]: Number(basePrice) || 0 });
+    if (!editAuction(activeAuctionId, { categories: list.map(c => (c === from ? clean : c)), categoryPrices })) return false;
+    if (clean === from) return true;
+    setPlayers(prev => prev.map(p => (p.auctionId === activeAuctionId && p.category === from ? { ...p, category: clean } : p)));
+    return true;
+  };
+  // A category with players in it is kept, so no player is left without one
+  // Every category without a base price gets the auction's suggested one
+  const fillCategoryPrices = () => {
+    if (!guardPlayers()) return 0;
+    const price = suggestedBasePrice(activeAuction);
+    const missing = categoriesOf(activeAuction).filter(c => !(Number(activeAuction?.categoryPrices?.[c]) > 0));
+    if (!missing.length) return 0;
+    editAuction(activeAuctionId, { categoryPrices: pricesWith(Object.fromEntries(missing.map(c => [c, price]))) });
+    return missing.length;
+  };
+  const deleteCategory = (name) => {
+    if (!guardPlayers()) return false;
+    const inUse = players.filter(p => p.category === name).length;
+    if (inUse) {
+      showNotice(`${name} has ${inUse} player${inUse === 1 ? '' : 's'}. Move them to another category first.`);
+      return false;
+    }
+    return editAuction(activeAuctionId, { categories: categoriesOf(activeAuction).filter(c => c !== name), categoryPrices: pricesWith({ [name]: 0 }) });
+  };
+
   // Purse remaining is derived from sold players, so editing a team never wipes what it has spent
   const editTeam = (teamId, updatedData) => {
-    if (!guardSetup()) return false;
-    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, ...data } = updatedData;
+    if (!guardPlayers()) return false;
+    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, ...rest } = updatedData;
+    const { initialPurse: _purse, ...details } = rest;
+    const data = canSetup ? rest : details;
     setTeams(prev => prev.map(t => t.id === teamId ? { ...t, ...data } : t));
     return true;
   };
 
   // Deleting a team returns its squad to the pool
   const deleteTeam = (teamId) => {
-    if (!guardSetup()) return false;
+    if (!guardPlayers()) return false;
     setTeams(prev => prev.filter(t => t.id !== teamId));
     setPlayers(prev => prev.map(p => {
       if (p.soldToTeamId === teamId) {
@@ -970,14 +1115,14 @@ export const AuctionProvider = ({ children }) => {
   });
 
   const addPlayer = (playerData) => {
-    if (!activeAuctionId || !guardSetup()) return false;
+    if (!activeAuctionId || !guardPlayers()) return false;
     setPlayers(prev => [...prev, newPlayer(playerData)]);
     return true;
   };
 
   // Bulk upload (Force Pulse admin)
   const importPlayers = (list) => {
-    if (!activeAuctionId || !isSuperAdmin || list.length === 0) return 0;
+    if (!activeAuctionId || !canEditPlayers || list.length === 0) return 0;
     setPlayers(prev => [...prev, ...list.map(newPlayer)]);
     // Categories used in the file become auction categories
     const known = activeAuction.categories || [];
@@ -987,7 +1132,7 @@ export const AuctionProvider = ({ children }) => {
   };
 
   const editPlayer = (playerId, updatedData) => {
-    if (!guardSetup()) return false;
+    if (!guardPlayers()) return false;
     setPlayers(prev => prev.map(p => {
       if (p.id !== playerId) return p;
       const next = { ...p, ...updatedData };
@@ -999,7 +1144,7 @@ export const AuctionProvider = ({ children }) => {
   };
 
   const deletePlayer = (playerId) => {
-    if (!guardSetup()) return false;
+    if (!guardPlayers()) return false;
     setPlayers(prev => prev.filter(p => p.id !== playerId));
     return true;
   };
@@ -1032,6 +1177,11 @@ export const AuctionProvider = ({ children }) => {
         resolveUnlockRequest,
         setAuctionPlan,
         canSetup,
+        canEditPlayers,
+        addCategory,
+        renameCategory,
+        deleteCategory,
+        fillCategoryPrices,
         createUserAccount,
         assignAuction,
         importTeams,
@@ -1043,6 +1193,8 @@ export const AuctionProvider = ({ children }) => {
         pickRandomPlayer,
         reopenLastPlayer,
         reauctionAllUnsold,
+        lowerBasePrice,
+        restoreBasePrice,
         sellToRandomTeam,
         runLuckyDraw,
         logEvent,
@@ -1071,6 +1223,9 @@ export const AuctionProvider = ({ children }) => {
         nextBidAmount,
         askingBid,
         setAskingBid,
+        bidClock,
+        startBidClock,
+        stopBidClock,
         autoBotBidding,
         setAutoBotBidding,
         isSoundMuted,

@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
+import { useSessionState } from '../../hooks/useSessionState';
 import { useAuction } from '../../context/AuctionContext';
 import { FREE_PLAN, getPlan } from '../../config/forcePulse';
 import { ContactForcePulseModal } from '../Admin/PlanLock';
 import { AuctionWorkspace } from './AuctionWorkspace';
 import { AuctionForm } from './AuctionForm';
 import { AuctionsList } from './AuctionsList';
-import { Plus, Sparkles, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Button, Eyebrow, Stripes } from '../ui';
 
 // Organiser dashboard: my auctions, create a free one, or ask Force Pulse for a bigger one
 export const UserDashboard = () => {
   const { currentUser, myAuctions, setActiveAuctionId, activeAuctionId, unlockRequests } = useAuction();
-  const [openId, setOpenId] = useState(null);
+  // Open auction and edit page survive a refresh of this tab
+  const [openId, setOpenId] = useSessionState('fp:dash:open', null);
   // Full-page auction form: 'create', or the id of the auction being edited
-  const [formView, setFormView] = useState(null);
+  const [formView, setFormView] = useSessionState('fp:dash:form', null);
   const [showRequest, setShowRequest] = useState(false);
 
   const open = (id) => { setActiveAuctionId(id); setOpenId(id); window.scrollTo(0, 0); };
@@ -35,32 +38,27 @@ export const UserDashboard = () => {
 
   return (
     <div className="space-y-8 pb-16">
-      <div className="relative overflow-hidden rounded-3xl bg-slate-950 text-white p-6 sm:p-10">
+      <div className="relative overflow-hidden rounded-2xl bg-slate-950 text-white p-6 sm:p-10">
+        <Stripes />
         <div className="absolute -right-20 -top-20 w-80 h-80 rounded-full bg-lime-500/20 blur-3xl pointer-events-none" />
-        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="relative flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-lime-400/30 bg-lime-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-lime-300">
-              <Sparkles className="w-3.5 h-3.5" /> Organiser dashboard
-            </span>
-            <h1 className="font-bebas text-4xl tracking-wide">Welcome, {currentUser?.name || currentUser?.email}</h1>
+            <Eyebrow dark>Organiser dashboard</Eyebrow>
+            <h1 className="font-bebas text-5xl leading-none">Welcome, {currentUser?.name || currentUser?.email}</h1>
             <p className="text-sm text-slate-400 max-w-xl">
               Create a free auction with up to {FREE_PLAN.teamLimit} teams and set it up yourself. Need more teams? Force Pulse sets up
               the whole auction for you: teams, players and rules.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => setFormView('create')} className="inline-flex items-center gap-2 rounded-xl bg-lime-500 hover:bg-lime-400 px-5 py-3 text-sm font-black uppercase tracking-wider text-slate-950">
-              <Plus className="w-4 h-4" /> Create free auction
-            </button>
-            <button onClick={() => setShowRequest(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 px-5 py-3 text-sm font-bold">
-              More than {FREE_PLAN.teamLimit} teams? Ask Force Pulse
-            </button>
+            <Button size="lg" onClick={() => setFormView('create')}><Plus className="w-4 h-4" /> Create free auction</Button>
+            <Button size="lg" variant="ghostDark" onClick={() => setShowRequest(true)}>More than {FREE_PLAN.teamLimit} teams? Ask Force Pulse</Button>
           </div>
         </div>
       </div>
 
       {myRequests.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+        <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200 shadow-sm space-y-3">
           <h2 className="font-extrabold text-slate-900">My requests to Force Pulse</h2>
           <ul className="space-y-2 text-sm">
             {myRequests.map(r => (

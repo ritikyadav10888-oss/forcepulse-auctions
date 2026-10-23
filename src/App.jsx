@@ -9,47 +9,20 @@ import { UserDashboard } from './components/Dashboard/UserDashboard';
 import { HostScreen } from './components/Screens/HostScreen';
 import { OverlayScreen } from './components/Screens/OverlayScreen';
 import { LiveScreen } from './components/Screens/LiveScreen';
-import { LiveAuctioneerConsole } from './components/Admin/LiveAuctioneerConsole';
 import { LoginModal } from './components/Auth/LoginModal';
 import { PlayerRegistration } from './components/Public/PlayerRegistration';
-import { Activity } from 'lucide-react';
+import { Logo, LogoMark } from './components/ui';
 
 // Auction screens open in their own window and follow the controller live:
 //   ?screen=host|upcoming|sold|unsold|teams  venue / projector display
 //   ?screen=overlay                          YouTube / OBS lower-third (transparent)
-//   ?screen=controller                       auctioneer desk (sign-in required)
+//   ?screen=live-screen                      bidding: host screen + control bar (sign-in required)
+//                                            (?screen=controller, the old desk link, opens it too)
 // &auction=<id> picks the auction; ?screen=live is kept as an alias of host.
 const searchParams = new URLSearchParams(window.location.search);
 const screen = searchParams.get('screen');
 const screenAuctionId = searchParams.get('auction');
-const PINNED_HOST_VIEWS = { upcoming: 'UPCOMING', sold: 'SOLD', unsold: 'UNSOLD', teams: 'TEAMS', 'lucky-draw': 'LUCKY_DRAW', updates: 'UPDATES' };
-
-const ControllerScreen = () => {
-  const { currentUser, myAuctions, activeAuctionId } = useAuction();
-  const [showLogin, setShowLogin] = useState(false);
-
-  if (currentUser && myAuctions.some(a => a.id === activeAuctionId)) {
-    return (
-      <main className="min-h-screen bg-slate-50 p-4 sm:p-6 max-w-7xl mx-auto">
-        <LiveAuctioneerConsole />
-      </main>
-    );
-  }
-  return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <div className="bg-white border border-slate-200 rounded-3xl p-8 max-w-md text-center space-y-4 shadow-sm">
-        <h1 className="text-xl font-extrabold text-slate-900">Auction Controller</h1>
-        <p className="text-sm text-slate-500">
-          {currentUser ? "This account doesn't manage this auction." : 'Sign in with the organiser account to run this auction.'}
-        </p>
-        <button onClick={() => setShowLogin(true)} className="rounded-xl bg-lime-500 px-5 py-2.5 text-sm font-black text-slate-950">
-          {currentUser ? 'Switch account' : 'Sign in'}
-        </button>
-      </div>
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
-    </main>
-  );
-};
+const PINNED_HOST_VIEWS = { player: 'AUTO', upcoming: 'UPCOMING', sold: 'SOLD', unsold: 'UNSOLD', teams: 'TEAMS', 'lucky-draw': 'LUCKY_DRAW', updates: 'UPDATES', title: 'TITLE' };
 
 const ScreenApp = () => {
   const { auctions, activeAuctionId, setActiveAuctionId } = useAuction();
@@ -66,8 +39,7 @@ const ScreenApp = () => {
   if (targetId !== activeAuctionId) return null;
 
   if (screen === 'overlay') return <OverlayScreen />;
-  if (screen === 'controller') return <ControllerScreen />;
-  if (screen === 'live-screen') return <LiveScreen />;
+  if (screen === 'live-screen' || screen === 'controller') return <LiveScreen />;
   return <HostScreen forcedView={PINNED_HOST_VIEWS[screen]} forcedDesign={searchParams.get('design')} />;
 };
 
@@ -156,30 +128,27 @@ const AppContent = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-lime-400 selection:text-slate-950">
+    <div className="min-h-screen flex flex-col overflow-x-clip bg-slate-50 text-slate-900 font-sans selection:bg-lime-400 selection:text-slate-950">
       <Navbar currentPage={role === 'ADMIN' ? 'ADMIN' : route.page} onNavigate={navigate} onOpenAccount={goOrganise} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {page}
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-8 text-slate-500 text-xs mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-slate-900 text-lime-400 flex items-center justify-center">
-              <Activity className="w-3.5 h-3.5" />
-            </div>
-            <span className="font-extrabold text-slate-900 text-sm">Force Pulse</span>
-            <span>· Player Auction Platform</span>
+      <footer className="mt-auto bg-slate-950 text-slate-400">
+        <div className="h-1 bg-gradient-to-r from-lime-500 via-lime-300 to-lime-600" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-3 lg:col-span-2">
+            <Logo dark tagline="Player Auction Platform" />
+            <p className="max-w-sm text-sm leading-relaxed">
+              Live player auctions for leagues, clubs and corporate tournaments: bidding, purses, squads and a big-screen broadcast in one place.
+            </p>
           </div>
-          <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-semibold">
-            <button onClick={() => navigate('/')} className="hover:text-slate-900">Home</button>
-            <button onClick={() => navigate('/auctions')} className="hover:text-slate-900">Browse Auctions</button>
-            <button onClick={() => navigate('/how-to-use')} className="hover:text-slate-900">How to Use</button>
-            <button onClick={() => navigate('/pricing')} className="hover:text-slate-900">Pricing</button>
-            <button onClick={() => navigate('/contact')} className="hover:text-slate-900">Contact Us</button>
-            <button onClick={goOrganise} className="hover:text-slate-900">Organise</button>
-          </nav>
+          <FooterLinks title="Explore" links={[['Home', () => navigate('/')], ['Browse auctions', () => navigate('/auctions')], ['How it works', () => navigate('/how-to-use')]]} />
+          <FooterLinks title="Organisers" links={[['Organise an auction', goOrganise], ['Pricing', () => navigate('/pricing')], ['Contact us', () => navigate('/contact')]]} />
+        </div>
+        <div className="border-t border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 text-xs">© {new Date().getFullYear()} Force Pulse · Feel the pulse of every bid.</div>
         </div>
       </footer>
 
@@ -189,6 +158,17 @@ const AppContent = () => {
   );
 };
 
+const FooterLinks = ({ title, links }) => (
+  <nav className="space-y-3" aria-label={title}>
+    <h3 className="text-xs font-extrabold uppercase tracking-[0.2em] text-white">{title}</h3>
+    <ul className="space-y-2 text-sm">
+      {links.map(([label, onClick]) => (
+        <li key={label}><button onClick={onClick} className="hover:text-lime-400 transition-colors">{label}</button></li>
+      ))}
+    </ul>
+  </nav>
+);
+
 // Nothing renders until the account and auctions have arrived from the server
 const Loaded = ({ children }) => {
   const { loaded } = useAuction();
@@ -196,7 +176,7 @@ const Loaded = ({ children }) => {
     return (
       <div className={`min-h-screen flex items-center justify-center ${screen ? 'bg-slate-950' : 'bg-slate-50'}`}>
         <div className="flex items-center gap-3 text-sm font-bold text-slate-400">
-          <span className="w-8 h-8 rounded-xl bg-slate-900 text-lime-400 flex items-center justify-center"><Activity className="w-4 h-4" /></span>
+          <LogoMark className="w-12 h-12 animate-pulse" />
           Loading Force Pulse…
         </div>
       </div>

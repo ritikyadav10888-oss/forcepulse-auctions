@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuction } from '../../context/AuctionContext';
-import { PLANS, FREE_PLAN, planForTeams } from '../../config/forcePulse';
-import { uploadImage } from '../../services/imageUpload';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, ImagePlus, X } from 'lucide-react';
+import { PLANS, FREE_PLAN, planForTeams, FORCE_PULSE_CONTACT } from '../../config/forcePulse';
+import { uploadImage, IMAGE_SIZES } from '../../services/imageUpload';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, ImagePlus, X, LifeBuoy } from 'lucide-react';
+import { shortId } from './AuctionsList';
 import { formatMoney } from '../../services/money';
+import { MoneyInput } from '../MoneyInput';
 
 const SPORTS = ['Cricket', 'Football', 'Kabaddi', 'Volleyball', 'Badminton', 'Tennis', 'Basketball', 'Hockey', 'Other'];
 
@@ -94,6 +96,9 @@ const Toggle = ({ checked, onChange, label, hint, disabled }) => (
   </div>
 );
 
+const LOGO_SIZE = IMAGE_SIZES.tournamentLogo;
+const BANNER_SIZE = IMAGE_SIZES.banner;
+
 const ImageField = ({ label, hint, value, onChange, disabled, size }) => {
   const [error, setError] = useState('');
   const pick = async (e) => {
@@ -134,7 +139,7 @@ const ImageField = ({ label, hint, value, onChange, disabled, size }) => {
 // Create or edit an auction. Editing works on the open (active) auction.
 export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, onSaved, embedded = false }) => {
   const {
-    activeAuction, createAuction, editAuction, canSetup, isSuperAdmin, users, teams, editTeam,
+    activeAuction, createAuction, editAuction, canSetup, canEditPlayers, isSuperAdmin, users, teams, editTeam,
     assignAuction, setAuctionPlan
   } = useAuction();
   const isEdit = mode === 'edit';
@@ -144,8 +149,22 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
   const editable = !isEdit || canSetup;
+  // The organiser of a Force Pulse-managed auction still sets its logo and banner
+  const brandingOnly = isEdit && !canSetup && canEditPlayers;
+  const saveBranding = () => {
+    if (!editAuction(auction.id, { tournamentLogo: form.tournamentLogo, banner: form.banner })) return;
+    setSaved('Logo and banner saved.');
+    setTimeout(() => setSaved(''), 2500);
+  };
   const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
   const setVal = (key) => (v) => setForm(f => ({ ...f, [key]: v }));
+  // Logo / banner on an existing auction save as soon as they are uploaded or removed (no need to find Save at the bottom)
+  const setImage = (key) => (v) => {
+    setVal(key)(v);
+    if (!isEdit || !(canSetup || brandingOnly) || !editAuction(auction.id, { [key]: v })) return;
+    setSaved(v ? `${key === 'banner' ? 'Banner' : 'Logo'} saved: every screen shows it now.` : `${key === 'banner' ? 'Banner' : 'Logo'} removed.`);
+    setTimeout(() => setSaved(''), 3000);
+  };
   const teamLimit = isSuperAdmin ? PLANS[PLANS.length - 1].teamLimit : FREE_PLAN.teamLimit;
 
   const submit = (e) => {
@@ -169,7 +188,8 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
     const data = {
       sport: form.sport,
       title: form.title.trim(),
-      startDate: new Date(form.startDate).toISOString(),
+      // Blank date is allowed (shown as "Date TBA")
+      startDate: form.startDate ? new Date(form.startDate).toISOString() : '',
       assignedAdmin: form.assignedAdmin.trim(),
       status: form.status,
       description: form.description.trim(),
@@ -216,6 +236,8 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
   };
 
   const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-lime-500 disabled:bg-slate-50 disabled:text-slate-500';
+  const money = input.replace('mt-1 w-full ', '');
+  const setSlab = (i, key) => (v) => setForm(f => ({ ...f, bidIncrements: f.bidIncrements.map((s, j) => j === i ? { ...s, [key]: v } : s) }));
 
   return (
     <form onSubmit={submit} className="space-y-6 pb-16">
@@ -233,6 +255,19 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           This auction is set up by Force Pulse. Contact Force Pulse to change these settings.
         </p>
+      )}
+
+      {brandingOnly && (
+        <Section title="Logo & banner" text="Your tournament's logo and banner, shown on the public page and the screens.">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ImageField label="Logo" hint={LOGO_SIZE.label} value={form.tournamentLogo} onChange={setImage('tournamentLogo')} size={LOGO_SIZE} />
+            <ImageField label="Banner" hint={BANNER_SIZE.label} value={form.banner} onChange={setImage('banner')} size={BANNER_SIZE} />
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button type="button" onClick={saveBranding} className="rounded-xl bg-lime-500 hover:bg-lime-600 px-5 py-2.5 text-sm font-black uppercase tracking-wider text-slate-950">Save logo & banner</button>
+            {saved && <span role="status" className="inline-flex items-center gap-1.5 text-sm font-bold text-lime-700"><CheckCircle2 className="w-4 h-4" /> {saved}</span>}
+          </div>
+        </Section>
       )}
 
       <fieldset disabled={!editable} className="space-y-6">
@@ -289,16 +324,19 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
             <Field label="Description" className="sm:col-span-2 lg:col-span-3">
               <input value={form.description} onChange={set('description')} placeholder="Shown on the public auction page" className={input} />
             </Field>
-            <ImageField label="Logo" hint="500 × 500 px" value={form.tournamentLogo} onChange={setVal('tournamentLogo')} disabled={!editable} size={{ maxWidth: 500, maxHeight: 500, type: 'image/png' }} />
-            <ImageField label="Banner" hint="wide image" value={form.banner} onChange={setVal('banner')} disabled={!editable} size={{ maxWidth: 1600, maxHeight: 600, type: 'image/jpeg', quality: 0.8 }} />
+            {!brandingOnly && <>
+              <ImageField label="Logo" hint={LOGO_SIZE.label} value={form.tournamentLogo} onChange={setImage('tournamentLogo')} disabled={!editable} size={LOGO_SIZE} />
+              <ImageField label="Banner" hint={BANNER_SIZE.label} value={form.banner} onChange={setImage('banner')} disabled={!editable} size={BANNER_SIZE} />
+              {isEdit && saved && <span role="status" className="self-end inline-flex items-center gap-1.5 text-sm font-bold text-lime-700"><CheckCircle2 className="w-4 h-4" /> {saved}</span>}
+            </>}
           </div>
         </Section>
 
         <Section title="Rules & Settings">
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-5">
             <Toggle checked={form.randomOrder} onChange={setVal('randomOrder')} label="Auction players in random order" hint="Draw players at random instead of by set" />
-            <Field label="Default team purse (Cr)" required>
-              <input type="number" min="0.1" step="0.05" required value={form.purseLimit} onChange={set('purseLimit')} className={input} />
+            <Field label="Default team purse" required>
+              <MoneyInput label="Default team purse" required value={form.purseLimit} onChange={setVal('purseLimit')} className="mt-1" inputClassName={money} />
             </Field>
             <Field label="Total players per team" required hint="maximum squad">
               <input type="number" min="1" required value={form.maxSquadSize} onChange={set('maxSquadSize')} className={input} />
@@ -315,8 +353,8 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
             <Field label="Max overseas players per team">
               <input type="number" min="0" value={form.maxOverseas} onChange={set('maxOverseas')} className={input} />
             </Field>
-            <Field label="Max bid per player (Cr)" hint="empty = no limit">
-              <input type="number" min="0" step="0.05" value={form.maxBidPerPlayer} onChange={set('maxBidPerPlayer')} className={input} />
+            <Field label="Max bid per player" hint="empty = no limit">
+              <MoneyInput label="Max bid per player" value={form.maxBidPerPlayer} onChange={setVal('maxBidPerPlayer')} className="mt-1" inputClassName={money} />
             </Field>
             <Toggle checked={form.unlimitedPurse} onChange={setVal('unlimitedPurse')} label="Unlimited team purse" hint="Teams can bid without a purse limit" />
             <Toggle checked={form.calcMaxBid} onChange={setVal('calcMaxBid')} disabled={form.unlimitedPurse} label="Calculate max bid" hint="Keep money aside to complete the minimum squad" />
@@ -324,8 +362,8 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
             <div className="space-y-2">
               <Toggle checked={form.useFixedReserve} onChange={setVal('useFixedReserve')} disabled={form.unlimitedPurse || !form.calcMaxBid} label="Reserve a fixed amount per player" hint="Instead of the lowest base price" />
               {form.useFixedReserve && !form.unlimitedPurse && form.calcMaxBid && (
-                <Field label="Amount per remaining player (Cr)">
-                  <input type="number" min="0" step="0.05" value={form.reservePerPlayer} onChange={set('reservePerPlayer')} className={input} />
+                <Field label="Amount per remaining player">
+                  <MoneyInput label="Amount per remaining player" value={form.reservePerPlayer} onChange={setVal('reservePerPlayer')} className="mt-1" inputClassName={money} />
                 </Field>
               )}
             </div>
@@ -343,11 +381,11 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
             <div className="grid gap-2 max-w-md">
               {form.bidIncrements.map((slab, i) => (
                 <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                  <Field label={i === 0 ? 'Up to (Cr)' : ''}>
-                    <input type="number" min="0.01" step="0.01" aria-label="Up to" value={slab.maxPrice} onChange={(e) => setForm(f => ({ ...f, bidIncrements: f.bidIncrements.map((s, j) => j === i ? { ...s, maxPrice: e.target.value } : s) }))} className={input} />
+                  <Field label={i === 0 ? 'Up to' : ''}>
+                    <MoneyInput label="Up to" value={slab.maxPrice} onChange={setSlab(i, 'maxPrice')} className="mt-1" inputClassName={money} />
                   </Field>
-                  <Field label={i === 0 ? 'Increment (Cr)' : ''}>
-                    <input type="number" min="0.01" step="0.01" aria-label="Increment" value={slab.step} onChange={(e) => setForm(f => ({ ...f, bidIncrements: f.bidIncrements.map((s, j) => j === i ? { ...s, step: e.target.value } : s) }))} className={input} />
+                  <Field label={i === 0 ? 'Increment' : ''}>
+                    <MoneyInput label="Increment" value={slab.step} onChange={setSlab(i, 'step')} className="mt-1" inputClassName={money} />
                   </Field>
                   <button type="button" disabled={form.bidIncrements.length < 2} onClick={() => setForm(f => ({ ...f, bidIncrements: f.bidIncrements.filter((_, j) => j !== i) }))} className="mb-1 p-2 text-slate-400 hover:text-red-600 disabled:opacity-30" aria-label="Remove increment">
                     <Trash2 className="w-4 h-4" />
@@ -401,6 +439,24 @@ export const AuctionForm = ({ mode = 'create', defaultOwnerEmail = '', onBack, o
           </button>
           {onBack && <button type="button" onClick={onBack} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700">Cancel</button>}
           {saved && <span role="status" className="inline-flex items-center gap-1.5 text-sm font-bold text-lime-700"><CheckCircle2 className="w-4 h-4" /> {saved}</span>}
+        </div>
+      )}
+      {/* Help box: the Auction ID is what Force Pulse asks for */}
+      {isEdit && auction && (
+        <div className="flex flex-col gap-2 rounded-xl bg-white px-5 py-4 text-sm text-slate-700 ring-1 ring-slate-200 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="flex items-center gap-2">
+            <LifeBuoy className="w-4 h-4 shrink-0 text-lime-600" />
+            Need help with bulk data, your plan or settings? The Force Pulse team will ask for your auction ID.
+          </p>
+          <span className="shrink-0 rounded-md bg-slate-950 px-3 py-1.5 font-mono text-sm font-bold text-lime-400">ID {shortId(activeAuction.id)}</span>
+          {(FORCE_PULSE_CONTACT.phone || FORCE_PULSE_CONTACT.whatsapp || FORCE_PULSE_CONTACT.email) && (
+            <p>
+              Call or WhatsApp:{' '}
+              {FORCE_PULSE_CONTACT.phone && <a href={`tel:${FORCE_PULSE_CONTACT.phone}`} className="font-black text-lime-700">{FORCE_PULSE_CONTACT.phone}</a>}
+              {FORCE_PULSE_CONTACT.whatsapp && <> · <a href={`https://wa.me/${FORCE_PULSE_CONTACT.whatsapp}`} target="_blank" rel="noreferrer" className="font-black text-lime-700">WhatsApp</a></>}
+              {FORCE_PULSE_CONTACT.email && <> · <a href={`mailto:${FORCE_PULSE_CONTACT.email}`} className="font-black text-lime-700">{FORCE_PULSE_CONTACT.email}</a></>}
+            </p>
+          )}
         </div>
       )}
     </form>

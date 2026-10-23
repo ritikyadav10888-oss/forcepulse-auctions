@@ -1,0 +1,29 @@
+# Force Pulse on the shared Chatwoot VPS: app only. Chatwoot's Caddy (/opt/chatwoot/Caddyfile) serves
+# forcepulse.chatwoot.tech and reaches this container as forcepulse_app:3000 on the chatwoot_default network.
+services:
+  app:
+    build: .
+    image: forcepulse:latest
+    container_name: forcepulse_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: file:/data/forcepulse.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - ./data:/data
+    expose:
+      - "3000"
+    mem_limit: 768m
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [chatwoot]
+
+networks:
+  chatwoot:
+    name: chatwoot_default
+    external: true

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSessionState, clearSessionState } from '../../hooks/useSessionState';
 import { useAuction } from '../../context/AuctionContext';
 import { PLANS, getPlan } from '../../config/forcePulse';
 import { AuctionForm } from './AuctionForm';
@@ -6,6 +7,7 @@ import { AuctionsList } from './AuctionsList';
 import { StatusBadge } from '../Public/BrowseAuctions';
 import { AuctionWorkspace } from './AuctionWorkspace';
 import { Inbox, Gavel, Users, Plus, CheckCircle2, XCircle, Lock, UserPlus, Settings2, Search, Trash2 } from 'lucide-react';
+import { Button, Eyebrow, Stat, Stripes, Tabs, EmptyState } from '../ui';
 
 const SECTIONS = [
   ['REQUESTS', 'Requests', Inbox],
@@ -57,16 +59,18 @@ export const AdminPanel = () => {
     setActiveAuctionId, activeAuctionId, allPlayers, deleteAuction
   } = useAuction();
   const pending = unlockRequests.filter(r => r.status === 'PENDING');
-  const [section, setSection] = useState(pending.length ? 'REQUESTS' : 'AUCTIONS');
-  const [setupId, setSetupId] = useState(null);
-  const [setupTab, setSetupTab] = useState('TEAMS');
+  // Section, open auction and edit page survive a refresh of this tab
+  const [section, setSection] = useSessionState('fp:admin:section', pending.length ? 'REQUESTS' : 'AUCTIONS');
+  const [setupId, setSetupId] = useSessionState('fp:admin:setup', null);
+  const [setupTab, setSetupTab] = useSessionState('fp:admin:setupTab', 'TEAMS');
   const [grantPlan, setGrantPlan] = useState({});
   // Full-page auction form: { mode: 'create', owner } or { mode: 'edit', id }
-  const [formView, setFormView] = useState(null);
+  const [formView, setFormView] = useSessionState('fp:admin:form', null);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [notice, setNotice] = useState('');
 
   const openSetup = (id, tab = 'TEAMS') => {
+    clearSessionState(`fp:ws:tab:${id}`); // opening from the list starts on the tab asked for
     setActiveAuctionId(id);
     setSetupTab(tab);
     setSetupId(id);
@@ -110,42 +114,32 @@ export const AdminPanel = () => {
 
   return (
     <div className="space-y-6 pb-16">
-      <div className="rounded-3xl bg-slate-950 text-white p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <span className="text-xs font-black uppercase tracking-widest text-lime-400">Force Pulse admin</span>
-          <h1 className="font-bebas text-4xl tracking-wide">Control room</h1>
-          <p className="text-sm text-slate-400">Create users, assign auctions, and set up teams, players and rules for bigger auctions.</p>
-        </div>
-        <div className="grid grid-cols-3 gap-3 text-center">
-          {[['Pending requests', pending.length], ['Auctions', auctions.length], ['Users', users.length]].map(([label, n]) => (
-            <div key={label} className="rounded-2xl bg-slate-900 border border-slate-800 px-4 py-3">
-              <div className="text-2xl font-black text-lime-400">{n}</div>
-              <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
-            </div>
-          ))}
+      <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white sm:p-8">
+        <Stripes />
+        <div className="absolute -right-20 -top-24 w-80 h-80 rounded-full bg-lime-500/15 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-end">
+          <div className="space-y-2">
+            <Eyebrow dark>Force Pulse admin</Eyebrow>
+            <h1 className="font-bebas text-5xl leading-none">Control room</h1>
+            <p className="max-w-lg text-sm text-slate-400">Create users, assign auctions, and set up teams, players and rules for bigger auctions.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 md:w-[26rem]">
+            <Stat dark label="Requests" value={pending.length} tone={pending.length ? 'gold' : 'default'} />
+            <Stat dark label="Auctions" value={auctions.length} />
+            <Stat dark label="Users" value={users.length} />
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex gap-2 overflow-x-auto">
-          {SECTIONS.map(([id, label, Icon]) => (
-            <button
-              key={id}
-              onClick={() => setSection(id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 ${section === id ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
-            >
-              <Icon className="w-3.5 h-3.5 text-lime-500" /> {label}
-              {id === 'REQUESTS' && pending.length > 0 && <span className="rounded-full bg-red-600 px-1.5 text-[10px] text-white">{pending.length}</span>}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs
+          value={section}
+          onChange={setSection}
+          items={SECTIONS.map(([id, label, Icon]) => ({ id, label, icon: Icon, count: id === 'REQUESTS' ? pending.length : id === 'AUCTIONS' ? auctions.length : users.length }))}
+        />
         <div className="flex gap-2">
-          <button onClick={() => setShowCreateUser(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
-            <UserPlus className="w-4 h-4" /> New user
-          </button>
-          <button onClick={() => openCreate('')} className="inline-flex items-center gap-1.5 rounded-xl bg-lime-500 hover:bg-lime-600 px-3.5 py-2.5 text-xs font-black uppercase text-slate-950">
-            <Plus className="w-4 h-4" /> Auction for a user
-          </button>
+          <Button variant="subtle" onClick={() => setShowCreateUser(true)}><UserPlus className="w-4 h-4" /> New user</Button>
+          <Button onClick={() => openCreate('')}><Plus className="w-4 h-4" /> Auction for a user</Button>
         </div>
       </div>
 
@@ -154,12 +148,12 @@ export const AdminPanel = () => {
       {/* Requests */}
       {section === 'REQUESTS' && (
         <section className="space-y-3">
-          {pending.length === 0 && <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No pending requests.</p>}
+          {pending.length === 0 && <EmptyState icon={Inbox} title="All caught up" text="No pending requests from organisers." />}
           {pending.map(r => {
             const lock = r.auctionId ? getAuctionLock(r.auctionId) : null;
             const planId = grantPlan[r.id] || r.planId;
             return (
-              <div key={r.id} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <div key={r.id} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-xl border-l-4 border-lime-500 bg-white p-5 ring-1 ring-slate-200 shadow-sm">
                 <div className="space-y-1 text-sm">
                   <p className="font-extrabold text-slate-900">
                     {r.auctionId ? 'More teams for ' : 'New auction: '}{r.auctionTitle}
@@ -198,7 +192,7 @@ export const AdminPanel = () => {
 
       {/* Users */}
       {section === 'USERS' && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm overflow-x-auto">
+        <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200 shadow-sm overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-400">
               <tr><th className="py-2">User</th><th className="py-2">Organisation</th><th className="py-2">Auctions</th><th className="py-2" /></tr>

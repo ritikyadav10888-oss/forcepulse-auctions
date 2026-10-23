@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { useAuction, isPublicAuction } from '../../context/AuctionContext';
-import { FORCE_PULSE_CONTACT } from '../../config/forcePulse';
+import React, { useState } from 'react';
+import { useSessionState } from '../../hooks/useSessionState';
+import { useAuction, isPublicAuction, suggestedBasePrice } from '../../context/AuctionContext';
 import { screenUrl } from '../Admin/ScreensManager';
-import { shortId } from './AuctionsList';
-import { ArrowLeft, Shield, UserPlus, Radio, Layers, Monitor, Plus, Edit2, Download, Lock, SlidersHorizontal, User, Calendar, ClipboardList } from 'lucide-react';
-import { LiveAuctioneerConsole } from '../Admin/LiveAuctioneerConsole';
+import { ArrowLeft, Shield, UserPlus, Radio, Layers, Monitor, Plus, Edit2, Trash2, Download, FileSpreadsheet, FileText, Lock, SlidersHorizontal, User, Calendar, ClipboardList } from 'lucide-react';
 import { TeamManager } from '../Admin/TeamManager';
 import { PlayerManager } from '../Admin/PlayerManager';
 import { CreateCategoryModal } from '../Admin/CreateCategoryModal';
@@ -13,6 +11,8 @@ import { PlanBanner } from '../Admin/PlanLock';
 import { AuctionForm } from './AuctionForm';
 import { RegistrationsManager } from '../Admin/RegistrationsManager';
 import { formatMoney } from '../../services/money';
+import { downloadSquadsExcel, printSquadsPdf } from '../../services/squadExport';
+import { Button, Stripes, Tabs } from '../ui';
 
 const TABS = [
   ['TEAMS', 'Teams', Shield],
@@ -25,21 +25,12 @@ const TABS = [
 
 // One auction's setup and run room, used by both the organiser dashboard and the Force Pulse admin panel
 export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTab = 'TEAMS' }) => {
-  const { activeAuction, editAuction, teams, players, activeLock, canSetup, isSuperAdmin, users } = useAuction();
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const { activeAuction, editAuction, teams, players, activeLock, canSetup, canEditPlayers, deleteCategory, fillCategoryPrices, isSuperAdmin, users } = useAuction();
+  const [activeTab, setActiveTab] = useSessionState(`fp:ws:tab:${activeAuction?.id}`, initialTab);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
 
-  // A locked auction can't run the console
-  useEffect(() => {
-    if (activeLock.locked && activeTab === 'CONSOLE') setActiveTab('TEAMS');
-  }, [activeLock.locked, activeTab]);
-
   if (!activeAuction) return null;
-
-  if (activeTab === 'CONSOLE') {
-    return <LiveAuctioneerConsole onBack={() => setActiveTab('TEAMS')} />;
-  }
 
   const handleExportData = () => {
     const rows = [['Set', 'Player Name', 'Category', 'Base Price', 'Sold Price', 'Status', 'Team']]
@@ -65,8 +56,9 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
       </button>
 
       {/* Auction header */}
-      <div className="rounded-3xl bg-slate-900 text-white shadow-xl overflow-hidden">
-        <div className="p-5 sm:p-7 space-y-5">
+      <div className="relative rounded-2xl bg-slate-950 text-white shadow-xl overflow-hidden">
+        <Stripes />
+        <div className="relative p-5 sm:p-7 space-y-5">
           {/* Badges · title · meta */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -83,7 +75,7 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-950"><Lock className="w-3 h-3" /> Locked</span>
               )}
             </div>
-            <h1 className="font-bebas text-3xl sm:text-4xl leading-tight tracking-wide">{activeAuction.title}</h1>
+            <h1 className="font-bebas text-4xl sm:text-5xl leading-[0.95]">{activeAuction.title}</h1>
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-slate-400">
               {isSuperAdmin && (
                 <span className="inline-flex items-center gap-1.5 min-w-0">
@@ -93,7 +85,7 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
               )}
               <span className="inline-flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 shrink-0" />
-                {new Date(activeAuction.startDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                {Number.isNaN(new Date(activeAuction.startDate).getTime()) ? 'Date to be announced' : new Date(activeAuction.startDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
               </span>
             </div>
           </div>
@@ -121,36 +113,25 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-3 lg:ml-auto">
-              <button
-                onClick={() => window.open(screenUrl('live-screen', activeAuction.id), `fp-live-${activeAuction.id}`)}
-                disabled={activeLock.locked}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 px-5 py-3 text-xs font-black uppercase tracking-wider text-white disabled:bg-slate-700 disabled:text-slate-400"
-              >
-                <Monitor className="w-4 h-4" />
-                Live Screen
-              </button>
-              <button
-                onClick={() => setActiveTab('CONSOLE')}
-                disabled={activeLock.locked}
-                title={activeLock.locked ? 'Locked: contact Force Pulse to unlock this auction' : undefined}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-lime-500 hover:bg-lime-400 px-5 py-3 text-xs font-black uppercase tracking-wider text-slate-950 shadow-lg shadow-lime-500/20 transition-colors disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
-              >
+              <Button size="lg" onClick={() => window.open(screenUrl('live-screen', activeAuction.id), `fp-live-${activeAuction.id}`)} disabled={activeLock.locked} title={activeLock.locked ? 'Locked: contact Force Pulse to unlock this auction' : 'Opens the Live Screen: the big screen with the bidding bar'}>
                 {activeLock.locked ? <Lock className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
-                Launch Live Auction Console
-              </button>
-              <button
-                onClick={handleExportData}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-4 py-3 text-xs font-bold"
-              >
-                <Download className="w-4 h-4 text-lime-400" />
-                Export List
-              </button>
+                Start bidding (Live Screen)
+              </Button>
+              <Button variant="ghostDark" onClick={handleExportData}>
+                <Download className="w-4 h-4 text-lime-400" /> Export list
+              </Button>
+              <Button variant="ghostDark" onClick={() => downloadSquadsExcel(activeAuction, teams, players)} title="Each team with the players it bought, as an Excel file">
+                <FileSpreadsheet className="w-4 h-4 text-lime-400" /> Team squads (Excel)
+              </Button>
+              <Button variant="ghostDark" onClick={() => printSquadsPdf(activeAuction, teams, players) || window.alert('Allow pop-ups for this site, then try again to save the PDF.')} title="Opens a print page: choose Save as PDF">
+                <FileText className="w-4 h-4 text-lime-400" /> Team squads (PDF)
+              </Button>
             </div>
           </div>
         </div>
 
         {/* Key numbers */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-slate-800 bg-slate-950/40">
+        <div className="relative grid grid-cols-2 lg:grid-cols-4 border-t border-slate-800 bg-slate-900/60">
           {[
             ['Purse / team', `${formatMoney(activeAuction.purseLimit)}`],
             ['Squad size', `${activeAuction.minSquadSize}–${activeAuction.maxSquadSize}`],
@@ -170,25 +151,6 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
         </div>
       </div>
 
-      {/* Help box: the Auction ID is what Force Pulse asks for */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2 text-sm text-slate-700">
-        <p>
-          Need help with bulk data entry, your plan, auction settings or using the software? Contact the Force Pulse team. We're happy to help.
-        </p>
-        <p className="text-base">
-          <strong className="underline">Auction Id : {shortId(activeAuction.id)}</strong>{' '}
-          <span className="text-slate-500">(our team will ask for this id for a faster resolution)</span>
-        </p>
-        {(FORCE_PULSE_CONTACT.phone || FORCE_PULSE_CONTACT.whatsapp || FORCE_PULSE_CONTACT.email) && (
-          <p>
-            Call or WhatsApp:{' '}
-            {FORCE_PULSE_CONTACT.phone && <a href={`tel:${FORCE_PULSE_CONTACT.phone}`} className="font-black text-lime-700">{FORCE_PULSE_CONTACT.phone}</a>}
-            {FORCE_PULSE_CONTACT.whatsapp && <> · <a href={`https://wa.me/${FORCE_PULSE_CONTACT.whatsapp}`} target="_blank" rel="noreferrer" className="font-black text-lime-700">WhatsApp</a></>}
-            {FORCE_PULSE_CONTACT.email && <> · <a href={`mailto:${FORCE_PULSE_CONTACT.email}`} className="font-black text-lime-700">{FORCE_PULSE_CONTACT.email}</a></>}
-          </p>
-        )}
-      </div>
-
       {!isPublicAuction(activeAuction) && (
         <div role="status" className="rounded-2xl border border-red-200 bg-white px-5 py-4 text-sm font-medium text-red-600 shadow-sm">
           This auction is not verified yet, so its public page is switched off. Contact the Force Pulse team to verify the auction and enable the public page.
@@ -197,22 +159,11 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
 
       <PlanBanner />
 
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
-        {TABS.map(([id, label, Icon]) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 ${
-              activeTab === id ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5 text-lime-500" />
-            {label}
-            {id === 'TEAMS' && ` (${teams.length})`}
-            {id === 'PLAYERS' && ` (${players.length})`}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={activeTab}
+        onChange={setActiveTab}
+        items={TABS.map(([id, label, Icon]) => ({ id, label, icon: Icon, count: id === 'TEAMS' ? teams.length : id === 'PLAYERS' ? players.length : undefined }))}
+      />
 
       {activeTab === 'TEAMS' && <TeamManager />}
       {activeTab === 'PLAYERS' && <PlayerManager />}
@@ -227,7 +178,17 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
               <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Player Categories</h2>
               <p className="text-xs text-slate-500 font-medium">Categories group players in the catalogue, screens and squads</p>
             </div>
-            {canSetup && (
+            <div className="flex flex-wrap items-center gap-2">
+            {canEditPlayers && categoriesList.some(c => !(Number(activeAuction.categoryPrices?.[c]) > 0)) && (
+              <button
+                onClick={fillCategoryPrices}
+                title="Purse ÷ squad size ÷ 5, to the nearest lakh"
+                className="flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl"
+              >
+                Set missing prices automatically ({formatMoney(suggestedBasePrice(activeAuction))} each)
+              </button>
+            )}
+            {canEditPlayers && (
               <button
                 onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
                 className="flex items-center gap-2 bg-lime-500 hover:bg-lime-600 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider shadow-sm"
@@ -235,12 +196,13 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
                 <Plus className="w-4 h-4" /> New Category
               </button>
             )}
+            </div>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
-                <tr><th className="p-3.5">#</th><th className="p-3.5">Category</th><th className="p-3.5">Players</th><th className="p-3.5">Base price range</th><th className="p-3.5">Sold</th><th className="p-3.5 text-right" /></tr>
+                <tr><th className="p-3.5">#</th><th className="p-3.5">Category</th><th className="p-3.5">Players</th><th className="p-3.5">Base price</th><th className="p-3.5">Players' prices</th><th className="p-3.5">Sold</th><th className="p-3.5 text-right" /></tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                 {categoriesList.map((catName, idx) => {
@@ -251,13 +213,19 @@ export const AuctionWorkspace = ({ onBack, backLabel = 'All auctions', initialTa
                       <td className="p-3.5 font-mono text-slate-400">{idx + 1}</td>
                       <td className="p-3.5 font-bold text-slate-900">{catName}</td>
                       <td className="p-3.5">{inCat.length}</td>
+                      <td className="p-3.5 font-bold text-slate-900">{activeAuction.categoryPrices?.[catName] ? formatMoney(activeAuction.categoryPrices[catName]) : <span className="font-medium text-slate-400">Not set</span>}</td>
                       <td className="p-3.5">{prices.length ? `${formatMoney(Math.min(...prices))} – ${formatMoney(Math.max(...prices))}` : '—'}</td>
                       <td className="p-3.5">{inCat.filter(p => p.status === 'SOLD').length}</td>
                       <td className="p-3.5 text-right">
-                        {canSetup && (
-                          <button onClick={() => { setEditingCategory({ name: catName, basePrice: 1.0 }); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-slate-900" aria-label={`Rename ${catName}`}>
-                            <Edit2 className="w-4 h-4" />
-                          </button>
+                        {canEditPlayers && (
+                          <span className="inline-flex gap-1">
+                            <button onClick={() => { setEditingCategory({ name: catName, basePrice: activeAuction.categoryPrices?.[catName] ?? '' }); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-slate-900" aria-label={`Rename ${catName}`}>
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => { if (window.confirm(`Delete the ${catName} category?`)) deleteCategory(catName); }} className="p-1 text-slate-400 hover:text-red-600" aria-label={`Delete ${catName}`}>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </span>
                         )}
                       </td>
                     </tr>

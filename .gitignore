@@ -3,4 +3,11 @@ node_modules
 .env
 prisma/*.db
 prisma/*.db-journal
-uploads
+/uploads
+
+# Local copies of live data (database + photos)
+/local-backup-*
+
+# Player lists from organisers (contain phone numbers)
+*.xlsx
+/AUCTIONS

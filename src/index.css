@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;500;700&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800;1,900&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,21 +6,19 @@
 
 @layer base {
   body {
-    background-color: #f8f9fa;
-    color: #0f172a;
-    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    background-color: #F5F6FA;
+    color: #0A0D19;
+    font-family: 'Manrope', sans-serif;
   }
 }
 
-/* TPA Specific Font Classes */
+/* Display type: bold italic condensed capitals, like a broadcast scoreboard */
 .font-bebas {
-  font-family: 'Bebas Neue', sans-serif;
-  letter-spacing: 0.05em;
-}
-
-/* Condensed poster type for the Player Profile host design */
-.font-oswald {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-style: italic;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 /* Custom Scrollbar for sleek SaaS feel */
@@ -214,8 +212,33 @@
 .fp-shake { animation: fp-shake 0.35s ease-in-out infinite; }
 .fp-glow { animation: fp-glow 2.4s ease-in-out infinite; }
 
+/* Host screen backdrop motion. Lines sit 30px apart at 115deg, so one horizontal repeat is 30 / sin(115deg) = 33.1px;
+   drifting by exactly 10 repeats keeps the loop seamless. */
+@keyframes fp-lines-drift {
+  from { background-position: 0 0; }
+  to { background-position: 331.015px 0; }
+}
+.fp-lines {
+  background-image: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.045) 0 2px, transparent 2px 30px);
+  animation: fp-lines-drift 30s linear infinite;
+}
+@keyframes fp-beam {
+  0% { transform: translateX(-180%) skewX(-20deg); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(760%) skewX(-20deg); opacity: 0; }
+}
+.fp-beam { animation: fp-beam 11s ease-in-out infinite; }
+.fp-beam-late { animation-duration: 15s; animation-delay: 5s; }
+@keyframes fp-glow-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.fp-glow-breathe { animation: fp-glow-breathe 7s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .fp-sweep, .fp-shine, .fp-spark, .fp-raise-float { display: none; }
+  .fp-sweep, .fp-shine, .fp-spark, .fp-raise-float, .fp-beam { display: none; }
+  .fp-lines, .fp-glow-breathe { animation: none !important; }
   .fp-slide-in-left, .fp-rise, .fp-bid-pop, .fp-flash, .fp-stamp, .fp-banner-up, .fp-shake, .fp-glow, .fp-team-in, .fp-ping, .fp-card-in, .fp-photo-zoom, .fp-hand-raise,
   .fp-price-thump, .fp-price-glow, .fp-asking {
     animation: none !important;

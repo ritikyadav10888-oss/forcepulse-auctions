@@ -9,17 +9,22 @@ $root = Split-Path -Parent $PSScriptRoot
 $name = if ($Update) { 'forcepulse-update.zip' } else { 'forcepulse-full.zip' }
 $out = Join-Path (Split-Path -Parent $root) $name
 
-# Rebuilt on the server, or never needed there
-$exclude = @('node_modules', '.next', '.git', '*.zip', '*.tmp.mjs', './data', './backups')
+# Top-level folders and files left out: rebuilt on the server, or never needed there.
+# Skipped by name here because tar's --exclude matches anywhere in a path ('uploads' would also drop app/api/uploads).
+$skipTop = @('node_modules', '.next', '.git', 'data', 'backups', 'AUCTIONS', 'local-backup-20261022')
+# Patterns tar may match anywhere
+$exclude = @('*.zip', '*.tmp.mjs', '*.xlsx', '*.pdf')
 if ($Update) {
   # Live data and secrets stay as they are on the server
-  $exclude += @('.env', 'prisma/dev.db', 'prisma/*.db-journal', 'uploads')
+  $skipTop += @('.env', 'uploads')
+  $exclude += @('prisma/dev.db', 'prisma/*.db-journal')
 }
 
 if (Test-Path $out) { Remove-Item $out -Force -Confirm:$false }
 $tarArgs = @('-a', '-c', '-f', $out)
 foreach ($e in $exclude) { $tarArgs += "--exclude=$e" }
-$tarArgs += @('-C', $root, '.')
+$tarArgs += @('-C', $root)
+$tarArgs += Get-ChildItem -Force -LiteralPath $root | Where-Object { $skipTop -notcontains $_.Name } | ForEach-Object { $_.Name }
 & tar.exe @tarArgs
 if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
 

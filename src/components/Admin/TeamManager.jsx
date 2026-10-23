@@ -1,19 +1,40 @@
 import React, { useState } from 'react';
 import { useAuction } from '../../context/AuctionContext';
 import { DEFAULT_TEAM_LOGO } from '../../config/placeholders';
+import { uploadImage, IMAGE_SIZES } from '../../services/imageUpload';
+import { MoneyInput } from '../MoneyInput';
 import { BulkImport } from './BulkImport';
 import { ContactForcePulseModal } from './PlanLock';
-import { Plus, Edit2, Trash2, Shield, CheckCircle2, AlertCircle, CreditCard } from 'lucide-react';
+import { Plus, Edit2, Trash2, Shield, CheckCircle2, AlertCircle, CreditCard, ImagePlus, X } from 'lucide-react';
 import { formatMoney } from '../../services/money';
 
 export const TeamManager = () => {
-  const { teams, addTeam, editTeam, deleteTeam, activeAuction, activeLock, canSetup, isSuperAdmin } = useAuction();
+  const { teams, addTeam, editTeam, deleteTeam, activeAuction, activeLock, canSetup, canEditPlayers, isSuperAdmin } = useAuction();
   const [showRequest, setShowRequest] = useState(false);
   // Organisers at their plan's team limit ask Force Pulse instead of adding more
   const atLimit = !isSuperAdmin && teams.length >= activeLock.teamLimit;
 
   const [showModal, setShowModal] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState('');
+
+  // Logo from this device: scaled down in the browser (PNG keeps transparent backgrounds), then stored on the server
+  const uploadLogo = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setLogoBusy(true);
+    setLogoError('');
+    try {
+      const url = await uploadImage(file, IMAGE_SIZES.teamLogo);
+      setFormData(prev => ({ ...prev, logo: url }));
+    } catch (err) {
+      setLogoError(err.message);
+    } finally {
+      setLogoBusy(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -29,11 +50,12 @@ export const TeamManager = () => {
     setFormData({
       name: '',
       shortCode: '',
-      logo: DEFAULT_TEAM_LOGO,
+      logo: '',
       initialPurse: activeAuction?.purseLimit || 100,
       owner: '',
       coach: ''
     });
+    setLogoError('');
     setShowModal(true);
   };
 
@@ -42,7 +64,7 @@ export const TeamManager = () => {
     setFormData({
       name: team.name,
       shortCode: team.shortCode,
-      logo: team.logo,
+      logo: team.logo === DEFAULT_TEAM_LOGO ? '' : team.logo,
       initialPurse: team.initialPurse,
       owner: team.owner || '',
       coach: team.coach || ''
@@ -52,9 +74,11 @@ export const TeamManager = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const logo = formData.logo.trim() || DEFAULT_TEAM_LOGO;
     if (editingTeam) {
       editTeam(editingTeam.id, {
         ...formData,
+        logo,
         initialPurse: Number(formData.initialPurse)
       });
     } else {
@@ -65,6 +89,7 @@ export const TeamManager = () => {
       }
       addTeam({
         ...formData,
+        logo,
         initialPurse: Number(formData.initialPurse)
       });
     }
@@ -80,7 +105,7 @@ export const TeamManager = () => {
           <p className="text-xs text-slate-500 font-medium">Create and edit franchise teams, assign purse budgets and logos</p>
         </div>
 
-        {canSetup && (
+        {canEditPlayers && (
           <div className="flex flex-wrap items-center gap-2">
             <BulkImport kind="teams" />
             {atLimit ? (
@@ -94,7 +119,7 @@ export const TeamManager = () => {
             ) : (
               <button
                 onClick={handleOpenAdd}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm shrink-0"
+                className="flex items-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 Add Franchise Team
@@ -130,7 +155,7 @@ export const TeamManager = () => {
                       </span>
                     )}
                   </div>
-                  {canSetup && <div className="flex items-center gap-1">
+                  {canEditPlayers && <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleOpenEdit(team)}
                       className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
@@ -209,7 +234,7 @@ export const TeamManager = () => {
                   placeholder="e.g. Mumbai Titans"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
                 />
               </div>
 
@@ -222,31 +247,50 @@ export const TeamManager = () => {
                     placeholder="MT"
                     value={formData.shortCode}
                     onChange={(e) => setFormData({ ...formData, shortCode: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
                   />
                 </div>
                 <div>
-                  <label className="block mb-1">Initial Purse (Cr)</label>
-                  <input
-                    type="number"
+                  <label className="block mb-1">Initial Purse</label>
+                  <MoneyInput
+                    label="Initial purse"
                     required
-                    step="0.5"
+                    disabled={!canSetup}
+                    title={canSetup ? undefined : 'The purse is set by Force Pulse'}
                     value={formData.initialPurse}
-                    onChange={(e) => setFormData({ ...formData, initialPurse: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-indigo-500"
+                    onChange={(v) => setFormData(prev => ({ ...prev, initialPurse: v }))}
+                    inputClassName="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block mb-1">Logo Image URL</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.logo}
-                  onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-indigo-500"
-                />
+                <label className="block mb-1">Team Logo <span className="ml-1 font-medium text-slate-400">{IMAGE_SIZES.teamLogo.label}, fitted without cropping</span></label>
+                <div className="flex items-start gap-3">
+                  <div className="relative shrink-0">
+                    <img src={formData.logo || DEFAULT_TEAM_LOGO} alt="" className="h-20 w-20 rounded-xl border border-slate-200 bg-slate-100 object-contain p-1" />
+                    {formData.logo && (
+                      <button type="button" onClick={() => setFormData({ ...formData, logo: '' })} aria-label="Remove logo" className="absolute -right-2 -top-2 rounded-full bg-slate-900 p-1 text-white hover:bg-slate-700">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <label className={`flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 font-bold text-slate-600 ${logoBusy ? 'opacity-60' : 'cursor-pointer hover:border-lime-500 hover:text-lime-700'}`}>
+                      <ImagePlus className="w-4 h-4" /> {logoBusy ? 'Uploading…' : 'Upload from device'}
+                      <input type="file" accept="image/*" className="sr-only" disabled={logoBusy} onChange={uploadLogo} aria-label="Upload team logo from device" />
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="…or paste an image link (https://…)"
+                      aria-label="Team logo link"
+                      value={formData.logo.startsWith('data:') ? '' : formData.logo}
+                      onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
+                    />
+                    {logoError && <p role="alert" className="font-bold text-red-600">{logoError}</p>}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -280,7 +324,8 @@ export const TeamManager = () => {
                 </button>
                 <button
                   type="submit"
-                  className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-indigo-700 shadow-sm"
+                  disabled={logoBusy}
+                  className="bg-slate-950 text-white font-bold px-4 py-2 rounded-xl hover:bg-slate-800 shadow-sm"
                 >
                   Save Team
                 </button>

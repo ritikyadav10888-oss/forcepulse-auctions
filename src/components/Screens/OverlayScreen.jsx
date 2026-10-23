@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
+import { PlayerPhoto } from '../PlayerPhoto';
 import { useAuction } from '../../context/AuctionContext';
-import { Activity } from 'lucide-react';
+import { FORCE_PULSE_LOGO } from '../ui';
 import { formatMoney } from '../../services/money';
 
 // Stream graphics for YouTube / Facebook live. Add to OBS (or vMix / Streamlabs) as a Browser Source
@@ -35,7 +36,7 @@ const StatusBlock = ({ status, accent }) => (
 
 const StartingSoon = ({ auction, theme, panel, accent, className = '' }) => (
   <div className={`inline-flex items-center gap-4 rounded-2xl px-6 py-4 shadow-2xl fp-rise ${className}`} style={panel}>
-    <span className="rounded-lg p-2" style={accent}><Activity className="w-6 h-6" /></span>
+    <img src={FORCE_PULSE_LOGO} alt="" className="w-12 h-12 object-contain" />
     <div>
       <div className="text-xs font-black uppercase tracking-[0.3em]" style={{ color: theme.accent }}>Starting soon</div>
       <div className="font-bebas text-4xl tracking-wide leading-none">{auction.title}</div>
@@ -100,8 +101,8 @@ export const OverlayScreen = () => {
         {waiting ? <StartingSoon auction={auction} theme={theme} panel={panel} accent={accent} /> : (
           <div key={player.id} className="relative w-[1200px] fp-rise">
             {/* Photo sits on the ribbon */}
-            <div className="relative z-0 mx-auto -mb-3 w-56 h-60 overflow-hidden bg-slate-300 shadow-2xl">
-              <img src={player.image} alt="" className={`w-full h-full object-cover ${unsold ? 'grayscale' : ''}`} />
+            <div className="relative z-0 mx-auto -mb-3 w-48 h-60 overflow-hidden bg-slate-300 shadow-2xl">
+              <img src={player.image} alt="" className={`w-full h-full object-cover object-top ${unsold ? 'grayscale' : ''}`} />
             </div>
             <div className="relative z-10 h-36">
               {/* Accent stripe behind, slanted the other way */}
@@ -126,7 +127,7 @@ export const OverlayScreen = () => {
                       {sold ? `to ${team.name}` : `${team.name} bidding`}
                     </div>
                   ) : (
-                    <div className="mt-1 text-xl font-semibold text-white/80">{player.category} · {player.country}</div>
+                    <div className="mt-1 text-xl font-semibold text-white/80">{player.category}</div>
                   )}
                 </div>
               </div>
@@ -143,7 +144,7 @@ export const OverlayScreen = () => {
       <div className="fixed top-0 left-0 p-6 font-sans text-white">
         {waiting ? <StartingSoon auction={auction} theme={theme} panel={panel} accent={accent} /> : (
           <div key={player.id} className="flex items-stretch rounded-xl overflow-hidden shadow-2xl fp-rise" style={panel}>
-            <img src={player.image} alt="" className="w-16 object-cover" />
+            <div className="relative w-16 shrink-0"><PlayerPhoto src={player.image} /></div>
             <div className="px-4 py-2 min-w-0">
               <div className="font-bebas text-3xl leading-none tracking-wide truncate max-w-[16rem]">{player.name}</div>
               <div className="text-xs font-bold text-white/70">{player.category} · {team ? team.shortCode : 'No bid'}</div>
@@ -164,7 +165,7 @@ export const OverlayScreen = () => {
         {waiting ? <StartingSoon auction={auction} theme={theme} panel={panel} accent={accent} /> : (
           <div key={player.id} className="w-96 rounded-3xl overflow-hidden shadow-2xl fp-slide-in-left" style={panel}>
             <div className="relative">
-              <img src={player.image} alt="" className="w-full aspect-[4/3] object-cover" />
+              <div className="relative w-full aspect-[4/3]"><PlayerPhoto src={player.image} /></div>
               <span className="absolute top-3 left-3 rounded px-2 py-0.5 text-xs font-black uppercase" style={accent}>{player.category}</span>
               {player.status !== 'CURRENT' && (
                 <span className={`absolute inset-x-0 bottom-0 py-2 text-center font-bebas text-4xl tracking-widest fp-banner-up ${player.status === 'SOLD' ? '' : 'bg-red-600'}`} style={player.status === 'SOLD' ? accent : undefined}>
@@ -175,7 +176,7 @@ export const OverlayScreen = () => {
             <div className="p-5 space-y-3">
               <div>
                 <div className="font-bebas text-5xl leading-none tracking-wide">{player.name}</div>
-                <div className="text-sm text-white/70">{player.role} · {player.country}{player.isOverseas ? ' ✈' : ''}</div>
+                <div className="text-sm text-white/70">{player.role}{player.isOverseas ? ' ✈' : ''}</div>
               </div>
               <div className="flex items-end justify-between gap-3">
                 <div>
@@ -199,11 +200,11 @@ export const OverlayScreen = () => {
       <div className="fixed inset-0 flex items-center justify-center p-10 font-sans text-white">
         {waiting ? <StartingSoon auction={auction} theme={theme} panel={panel} accent={accent} /> : (
           <div key={player.id} className="flex rounded-3xl overflow-hidden shadow-2xl max-w-5xl w-full fp-rise" style={panel}>
-            <img src={player.image} alt="" className="w-2/5 object-cover" />
+            <div className="relative w-2/5 shrink-0"><PlayerPhoto src={player.image} /></div>
             <div className="flex-1 p-8 space-y-5">
               <div className="flex flex-wrap gap-2">
                 <span className="rounded px-3 py-1 text-sm font-black uppercase" style={accent}>{player.category}</span>
-                <span className="rounded bg-white/10 px-3 py-1 text-sm font-bold">{player.country}{player.isOverseas ? ' · Overseas' : ''}</span>
+                <span className="rounded bg-white/10 px-3 py-1 text-sm font-bold">{player.isOverseas ? 'Overseas' : player.category}</span>
                 {player.age && <span className="rounded bg-white/10 px-3 py-1 text-sm font-bold">Age {player.age}</span>}
               </div>
               <div className="font-bebas text-7xl leading-none tracking-wide">{player.name}</div>
@@ -238,13 +239,12 @@ export const OverlayScreen = () => {
     <div className="fixed inset-x-0 bottom-0 p-6 sm:p-10 font-sans text-white">
       {waiting ? <StartingSoon auction={auction} theme={theme} panel={panel} accent={accent} /> : (
         <div key={player.id} className="flex items-stretch rounded-2xl overflow-hidden shadow-2xl max-w-6xl fp-banner-up" style={panel}>
-          <img src={player.image} alt="" className="w-36 object-cover" />
+          <div className="relative w-36 shrink-0"><PlayerPhoto src={player.image} /></div>
 
           <div className="flex-1 px-6 py-4 min-w-0">
             <div className="flex items-center gap-2">
               <span className="rounded px-2 py-0.5 text-xs font-black uppercase" style={accent}>{player.category}</span>
               {player.isOverseas && <span className="text-xs font-bold text-amber-300">✈ Overseas</span>}
-              <span className="text-xs font-bold text-white/60">{player.country}</span>
             </div>
             <div className="font-bebas text-6xl leading-none tracking-wide mt-1 truncate">{player.name}</div>
             <div className="text-sm text-white/70">{player.role} · Base {formatMoney(player.basePrice)}</div>

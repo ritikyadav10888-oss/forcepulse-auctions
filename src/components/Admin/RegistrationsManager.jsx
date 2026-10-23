@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useAuction } from '../../context/AuctionContext';
+import { useAuction, suggestedBasePrice } from '../../context/AuctionContext';
 import { api } from '../../services/serverSync';
 import { DEFAULT_PLAYER_PHOTO } from '../../config/placeholders';
+import { MoneyInput } from '../MoneyInput';
 import { Check, Copy, ExternalLink, Phone, X } from 'lucide-react';
 import { formatMoney } from '../../services/money';
 
@@ -11,11 +12,11 @@ const FILTERS = [['PENDING', 'Waiting'], ['APPROVED', 'Approved'], ['REJECTED', 
 
 // Organiser: open the public sign-up link, then approve sign-ups into the player pool
 export const RegistrationsManager = () => {
-  const { activeAuction, editAuction, addPlayer, canSetup, showNotice } = useAuction();
+  const { activeAuction, editAuction, addPlayer, canEditPlayers, showNotice } = useAuction();
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('PENDING');
   const [loading, setLoading] = useState(true);
-  const [basePrice, setBasePrice] = useState(1);
+  const [basePrice, setBasePrice] = useState(() => suggestedBasePrice(activeAuction));
   const [copied, setCopied] = useState(false);
   const auctionId = activeAuction.id;
   const link = registrationUrl(auctionId);
@@ -115,10 +116,10 @@ export const RegistrationsManager = () => {
             {label} ({count(id)})
           </button>
         ))}
-        {filter === 'PENDING' && canSetup && (
+        {filter === 'PENDING' && canEditPlayers && (
           <label className="ml-auto inline-flex items-center gap-2 text-xs font-bold text-slate-600">
-            Base price on approval (Cr)
-            <input type="number" min="0.01" step="0.05" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+            Base price on approval
+            <MoneyInput label="Base price on approval" value={basePrice} onChange={setBasePrice} inputClassName="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
           </label>
         )}
       </div>
@@ -149,13 +150,13 @@ export const RegistrationsManager = () => {
               </dl>
               {r.notes && <p className="rounded-xl bg-slate-50 p-2 text-xs text-slate-600">{r.notes}</p>}
               <div className="text-[11px] text-slate-400">Signed up {new Date(r.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</div>
-              {r.status === 'PENDING' && canSetup && (
+              {r.status === 'PENDING' && canEditPlayers && (
                 <div className="flex gap-2">
                   <button onClick={() => setStatus(r, 'APPROVED')} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-lime-500 hover:bg-lime-600 px-3 py-2 text-xs font-black text-slate-950"><Check className="w-4 h-4" /> Approve</button>
                   <button onClick={() => setStatus(r, 'REJECTED')} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-red-50 hover:text-red-700"><X className="w-4 h-4" /> Reject</button>
                 </div>
               )}
-              {r.status === 'REJECTED' && canSetup && (
+              {r.status === 'REJECTED' && canEditPlayers && (
                 <button onClick={() => setStatus(r, 'PENDING')} className="text-xs font-bold text-slate-500 underline">Move back to waiting</button>
               )}
             </div>

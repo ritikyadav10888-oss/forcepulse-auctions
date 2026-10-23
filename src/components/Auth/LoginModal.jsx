@@ -127,7 +127,7 @@ export const LoginModal = ({ onClose, initialMode = 'LOGIN', resetToken }) => {
       <div role="dialog" aria-modal="true" className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 relative overflow-hidden max-h-[90vh] overflow-y-auto">
 
         {/* Top Accent background bar */}
-        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-lime-500 via-emerald-500 to-indigo-600"></div>
+        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-lime-500 via-emerald-500 to-slate-800"></div>
 
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">

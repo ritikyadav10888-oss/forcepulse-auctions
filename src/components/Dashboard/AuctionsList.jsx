@@ -11,6 +11,7 @@ const STATUS = {
   LIVE: { label: 'Started', icon: CheckCircle2, cls: 'text-emerald-700 bg-emerald-50' },
   PAST: { label: 'Completed', icon: Flag, cls: 'text-slate-600 bg-slate-100' }
 };
+const STATUS_ORDER = { LIVE: 0, UPCOMING: 1, PAST: 2 };
 
 const SORTS = [
   ['', '-'],
@@ -30,7 +31,8 @@ export const AuctionsList = ({ mode = 'user', onCreate, onView, onEdit }) => {
   const { auctions, myAuctions, allTeams, getAuctionLock, users, deleteAuction, isSuperAdmin, currentUser } = useAuction();
   const source = mode === 'admin' ? auctions : myAuctions;
 
-  const [statuses, setStatuses] = useState(['UPCOMING', 'LIVE']);
+  // Every auction shows by default, completed ones included; the filter narrows it down
+  const [statuses, setStatuses] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('');
@@ -56,6 +58,8 @@ export const AuctionsList = ({ mode = 'user', onCreate, onView, onEdit }) => {
     (!q || a.title.toLowerCase().includes(q) || (a.sport || '').toLowerCase().includes(q) || shortId(a.id).includes(q) ||
       (mode === 'admin' && ((a.ownerEmail || '').includes(q) || ownerName(a.ownerEmail).toLowerCase().includes(q))))
   );
+  // Default order: live first, then upcoming, then completed
+  if (!sort) rows = [...rows].sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3));
   if (sort === 'DATE_DESC') rows = [...rows].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
   if (sort === 'DATE_ASC') rows = [...rows].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
   if (sort === 'TITLE') rows = [...rows].sort((a, b) => a.title.localeCompare(b.title));
@@ -150,7 +154,7 @@ export const AuctionsList = ({ mode = 'user', onCreate, onView, onEdit }) => {
                       </div>
                     </td>
                     <td className="py-3 pr-3 whitespace-nowrap text-slate-700">
-                      <span className="inline-flex items-center gap-1.5"><Calendar className="w-4 h-4 text-slate-400" />{new Date(a.startDate).toISOString().slice(0, 10)}</span>
+                      <span className="inline-flex items-center gap-1.5"><Calendar className="w-4 h-4 text-slate-400" />{Number.isNaN(new Date(a.startDate).getTime()) ? 'Date TBA' : new Date(a.startDate).toISOString().slice(0, 10)}</span>
                     </td>
                     <td className="py-3 pr-3">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${st.cls}`} title={st.label}>

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useAuction } from '../../context/AuctionContext';
 import { OVERLAY_THEMES, OVERLAY_LAYOUTS } from '../Screens/OverlayScreen';
-import { HOST_DESIGNS } from '../Screens/HostScreen';
-import { Radio, Newspaper, Dices, Monitor, Gamepad2, Youtube, ListOrdered, CheckCircle2, XCircle, Wallet, ExternalLink, Copy, Check, Lock } from 'lucide-react';
+import { HOST_DESIGNS, HOST_BACKGROUNDS, backgroundStyle } from '../Screens/HostScreen';
+import { uploadImage, IMAGE_SIZES } from '../../services/imageUpload';
+import { youtubeEmbedUrl } from '../../services/youtube';
+import { Radio, Newspaper, Dices, Monitor, Youtube, ListOrdered, CheckCircle2, XCircle, Wallet, ExternalLink, Copy, Check, Lock, ImagePlus } from 'lucide-react';
 
 export const screenUrl = (screen, auctionId, extra = {}) => {
   const params = new URLSearchParams({ screen, auction: auctionId, ...extra });
@@ -45,6 +47,101 @@ const ScreenCard = ({ icon: Icon, title, text, url, locked, children }) => {
   );
 };
 
+// Host screen backdrop: preset swatches, or the organiser's own image. Switches every open host screen live.
+const BackgroundPicker = () => {
+  const { runSettings, setRunSetting } = useAuction();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const current = runSettings.hostBackground;
+  const image = runSettings.hostBackgroundImage;
+
+  const upload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    try {
+      const url = await uploadImage(file, IMAGE_SIZES.screenBackground);
+      setRunSetting('hostBackgroundImage', url);
+      setRunSetting('hostBackground', 'image');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pt-3 space-y-1.5">
+      <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500">Background (switches live)</span>
+      <div className="grid grid-cols-3 gap-1.5">
+        {Object.entries(HOST_BACKGROUNDS).filter(([key]) => key !== 'image' || image).map(([key, bg]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setRunSetting('hostBackground', key)}
+            aria-pressed={current === key}
+            title={bg.name}
+            className={`group overflow-hidden rounded-lg text-left ring-2 transition-all ${current === key ? 'ring-lime-500' : 'ring-transparent hover:ring-slate-300'}`}
+          >
+            <span className="relative block h-10" style={backgroundStyle(key)}>
+              {key === 'image' && <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-70" />}
+              {current === key && <Check className="absolute right-1 top-1 w-4 h-4 rounded bg-lime-500 p-0.5 text-slate-950" />}
+            </span>
+            <span className="block truncate bg-slate-50 px-1.5 py-1 text-[11px] font-bold text-slate-700">{bg.name}</span>
+          </button>
+        ))}
+      </div>
+      <label className={`flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-2 py-2 text-xs font-bold text-slate-600 ${busy ? 'opacity-60' : 'cursor-pointer hover:border-lime-500 hover:text-lime-700'}`}>
+        <ImagePlus className="w-4 h-4" /> {busy ? 'Uploading…' : image ? 'Replace background image' : 'Upload your own background'}
+        <input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={upload} aria-label="Upload host screen background image" />
+      </label>
+      {error && <p role="alert" className="text-xs font-bold text-red-600">{error}</p>}
+      <p className="text-[11px] text-slate-500">{IMAGE_SIZES.screenBackground.label}: any photo is cropped to fill the screen. Images are darkened on screen so names and prices stay readable.</p>
+    </div>
+  );
+};
+
+// YouTube live link: shown as a video on the public auction page while the auction is Live
+const YoutubeLink = () => {
+  const { activeAuction, setRunSetting } = useAuction();
+  const [link, setLink] = useState(activeAuction.youtubeUrl || '');
+  const [saved, setSaved] = useState('');
+  const valid = !link.trim() || !!youtubeEmbedUrl(link);
+  const save = (value) => {
+    if (value.trim() && !youtubeEmbedUrl(value)) return;
+    if (setRunSetting('youtubeUrl', value.trim())) {
+      setSaved(value.trim() ? 'Saved: the public page shows this video while the auction is Live.' : 'Removed from the public page.');
+      setTimeout(() => setSaved(''), 3500);
+    }
+  };
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="rounded-xl bg-red-50 p-2.5 text-red-600"><Youtube className="w-5 h-5" /></span>
+        <div>
+          <h3 className="font-extrabold text-slate-900">YouTube live on the public page</h3>
+          <p className="text-sm text-slate-500">Paste your YouTube live link (or the channel's /live link). While the auction is Live, viewers of the public auction page watch the video above the bidding.</p>
+        </div>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); save(link); }} className="flex flex-col gap-2 sm:flex-row">
+        <input
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="https://www.youtube.com/live/…  or  https://youtu.be/…"
+          aria-label="YouTube live link"
+          className={`flex-1 rounded-xl border bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-lime-500 ${valid ? 'border-slate-300' : 'border-red-400'}`}
+        />
+        <button type="submit" disabled={!valid} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-40">Save</button>
+        {activeAuction.youtubeUrl && <button type="button" onClick={() => { setLink(''); save(''); }} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Remove</button>}
+      </form>
+      {!valid && <p role="alert" className="text-xs font-bold text-red-600">That isn't a YouTube video or live link.</p>}
+      {saved && <p role="status" className="text-xs font-bold text-lime-700">{saved}</p>}
+    </div>
+  );
+};
+
 export const ScreensManager = () => {
   const { activeAuction, activeLock, runSettings, setRunSetting } = useAuction();
   const [theme, setTheme] = useState('lime');
@@ -63,6 +160,8 @@ export const ScreensManager = () => {
           (e.g. a second monitor, projector or OBS).
         </p>
       </div>
+
+      <YoutubeLink key={id} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         <ScreenCard
@@ -89,6 +188,7 @@ export const ScreensManager = () => {
               ))}
             </div>
             <p className="text-xs text-slate-500">{HOST_DESIGNS[runSettings.hostDesign]?.text}</p>
+            <BackgroundPicker />
           </div>
         </ScreenCard>
         <ScreenCard
@@ -96,13 +196,6 @@ export const ScreensManager = () => {
           title="Live Screen (all-in-one)"
           text="The host screen with the auctioneer's control bar at the bottom: start the auction, load players by serial, type bids, Sold / Unsold. Requires sign-in."
           url={screenUrl('live-screen', id)}
-          locked={locked}
-        />
-        <ScreenCard
-          icon={Gamepad2}
-          title="Auction Controller"
-          text="The auctioneer's desk: load players, accept bids, run the clock, hammer sold / unsold and choose what the host screen shows. Requires sign-in."
-          url={screenUrl('controller', id)}
           locked={locked}
         />
         <ScreenCard

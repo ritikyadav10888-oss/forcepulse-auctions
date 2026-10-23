@@ -5,13 +5,13 @@ import { Upload, FileDown, X } from 'lucide-react';
 
 // Force Pulse admin: upload teams or players for the open auction from a CSV file
 export const BulkImport = ({ kind }) => {
-  const { activeAuction, importTeams, importPlayers, isSuperAdmin } = useAuction();
+  const { activeAuction, importTeams, importPlayers, isSuperAdmin, canEditPlayers } = useAuction();
   const fileRef = useRef(null);
   const [preview, setPreview] = useState(null); // { items, errors, fileName }
   const [result, setResult] = useState('');
-  if (!isSuperAdmin) return null;
-
   const isPlayers = kind === 'players';
+  // Organisers import their own players; teams come from Force Pulse
+  if (!(isPlayers ? canEditPlayers : isSuperAdmin)) return null;
 
   const onFile = async (e) => {
     const file = e.target.files?.[0];
@@ -19,7 +19,7 @@ export const BulkImport = ({ kind }) => {
     if (!file) return;
     const text = await file.text();
     const parsed = isPlayers
-      ? playersFromCSV(text)
+      ? playersFromCSV(text, { categoryPrices: activeAuction?.categoryPrices || {} })
       : teamsFromCSV(text, { defaultPurse: activeAuction?.purseLimit || 100 });
     setResult('');
     setPreview({ ...parsed, fileName: file.name });
