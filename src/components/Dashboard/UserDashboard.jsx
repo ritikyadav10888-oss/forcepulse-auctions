@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSessionState } from '../../hooks/useSessionState';
 import { useAuction } from '../../context/AuctionContext';
 import { FREE_PLAN, getPlan } from '../../config/forcePulse';
@@ -19,18 +19,24 @@ export const UserDashboard = () => {
   const [showRequest, setShowRequest] = useState(false);
 
   const open = (id) => { setActiveAuctionId(id); setOpenId(id); window.scrollTo(0, 0); };
+
+  // The open auction (or the one being edited) is made the active one again if browsing changed it
+  const wanted = formView && formView !== 'create' ? formView : openId;
+  useEffect(() => {
+    if (wanted && wanted !== activeAuctionId && myAuctions.some(a => a.id === wanted)) setActiveAuctionId(wanted);
+  }, [wanted, activeAuctionId, myAuctions.length]);
   const openEdit = (id) => { setActiveAuctionId(id); setFormView(id); window.scrollTo(0, 0); };
 
   if (formView === 'create') {
     return <AuctionForm mode="create" onBack={() => setFormView(null)} onSaved={(id) => { setFormView(null); open(id); }} />;
   }
   if (formView && myAuctions.some(a => a.id === formView)) {
-    if (activeAuctionId !== formView) return null;
+    if (activeAuctionId !== formView) return <p className="py-16 text-center text-sm font-semibold text-slate-500">Opening auction…</p>;
     return <AuctionForm key={formView} mode="edit" onBack={() => setFormView(null)} />;
   }
 
   if (openId && myAuctions.some(a => a.id === openId)) {
-    if (activeAuctionId !== openId) return null;
+    if (activeAuctionId !== openId) return <p className="py-16 text-center text-sm font-semibold text-slate-500">Opening auction…</p>;
     return <AuctionWorkspace onBack={() => setOpenId(null)} backLabel="My auctions" />;
   }
 

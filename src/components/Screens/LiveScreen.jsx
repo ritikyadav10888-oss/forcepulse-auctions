@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuction, getBidIncrement, useSecondsLeft } from '../../context/AuctionContext';
 import { HostScreen, useNewLuckyDraw } from './HostScreen';
-import { useTeamBidKeys, teamKey } from '../../hooks/useTeamBidKeys';
+import { useTeamBidKeys } from '../../hooks/useTeamBidKeys';
 import { LoginModal } from '../Auth/LoginModal';
 import { Menu, ChevronDown, Play, X, Clock, Undo2, ArrowLeft } from 'lucide-react';
 import { formatMoney } from '../../services/money';
@@ -10,6 +10,7 @@ import { formatMoney } from '../../services/money';
 // Before the auction starts it shows "Bidding yet to start" and a Start Auction button.
 
 const BAR_H = 60;
+const CALM_KEY = 'fp_live_calm';
 const CLOCK_SECONDS = 30;
 const round2 = (n) => Math.round(Number(n) * 10000) / 10000;
 
@@ -70,9 +71,52 @@ const StatsDialog = ({ kind, players, onClose }) => {
   );
 };
 
-const ControlBar = ({ onHeight }) => {
+// Ctrl+J: jump the bid straight to an amount typed in lakh ("2" = 2 Lakh, "2.5" = 2.5 Lakh). It becomes the asking
+// bid shown on every screen, and the team buttons then bid it; it can't be below the next valid bid.
+const JumpDialog = ({ nextBid, onJump, onClose }) => {
+  const [text, setText] = useState('');
+  const lakh = Number(text.replace(/,/g, ''));
+  const cr = text.trim() !== '' && Number.isFinite(lakh) && lakh > 0 ? round2(lakh / 100) : null;
+  const tooLow = cr !== null && cr < nextBid;
+  const submit = (e) => {
+    e.preventDefault();
+    if (cr === null || tooLow) return;
+    onJump(cr);
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" onClick={onClose}>
+      <form role="dialog" aria-modal="true" aria-label="Jump bid" onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }} className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-600 bg-slate-800 p-6 text-slate-100 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-extrabold">Jump bid to</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:bg-slate-700"><X className="w-5 h-5" /></button>
+        </div>
+        <label className="flex items-center gap-3 rounded-xl border border-slate-500 bg-slate-900 px-4 focus-within:border-emerald-400">
+          <input
+            autoFocus
+            inputMode="decimal"
+            value={text}
+            onChange={(e) => setText(e.target.value.replace(/[^\d.,]/g, ''))}
+            aria-label="Amount in lakh"
+            className="h-16 w-full min-w-0 bg-transparent text-4xl font-black tabular-nums outline-none"
+          />
+          <span className="text-xl font-black uppercase text-slate-400">Lakh</span>
+        </label>
+        <p className={`min-h-[1.25rem] text-sm font-bold ${tooLow ? 'text-rose-300' : 'text-slate-400'}`}>
+          {tooLow ? `Must be at least ${formatMoney(nextBid)} (the next bid)` : cr !== null ? `Screens will show ${formatMoney(cr)} · ${formatRupees(cr)}` : `Next bid is ${formatMoney(nextBid)}. Type 2 for 2 Lakh.`}
+        </p>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-11 rounded-lg border border-slate-600 px-4 text-sm font-bold text-slate-200 hover:bg-slate-700">Cancel</button>
+          <button type="submit" disabled={cr === null || tooLow} className="h-11 rounded-lg bg-emerald-700 px-5 text-sm font-black text-white hover:bg-emerald-600 disabled:bg-slate-700 disabled:text-slate-500">Jump (Enter)</button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+const ControlBar = ({ onHeight, onAmount, calm, onCalm, arrange }) => {
   const {
-    activeAuction, currentPlayer, players, teams, nextBidAmount, placeBid, canTeamBid, sellPlayer, markPlayerUnsold,
+    activeAuction, currentPlayer, players, teams, nextBidAmount, placeBid, sellPlayer, markPlayerUnsold,
     loadNextPlayer, selectPlayerForAuction, undoLastBid, reopenLastPlayer, reauctionAllUnsold, runSettings, setRunSetting,
     editAuction, setAskingBid, toggleSound, isSoundMuted, notice, showNotice, lastDecidedId, bidHistory, activeLock,
     sellToRandomTeam, runLuckyDraw, logEvent, lowerBasePrice, restoreBasePrice, bidClock, startBidClock, stopBidClock, isSuperAdmin
@@ -126,6 +170,8 @@ const ControlBar = ({ onHeight }) => {
 
   // Bids go in at the auction's precision (1 lakh), so round what was typed the same way
   const amt = round2(parseRupees(amount));
+  // The screen's team tiles bid this same amount, as typed (no need to leave the box first)
+  useEffect(() => { onAmount?.(amt); }, [amt, onAmount]);
   const step = getBidIncrement(activeAuction, amt || nextBidAmount, currentPlayer);
   // Changing the amount also shows it on every host screen as the asking bid
   const setAmountCr = (cr) => {
@@ -135,9 +181,47 @@ const ControlBar = ({ onHeight }) => {
 
   const raiseAmount = () => isLive && setAmountCr(round2((amt || nextBidAmount) + step));
   const lowerAmount = () => isLive && setAmountCr(Math.max(nextBidAmount, round2((amt || nextBidAmount) - step)));
-  // Number keys bid the amount in the box for that team (1 = first team ...), +/- step the amount,
-  // Backspace / Ctrl+Z undoes the last bid. Views switch from the top-right menu here.
-  useTeamBidKeys(teams, { onBid: (team) => placeBid(team.id, amt), onUndo: undoLastBid, onRaise: raiseAmount, onLower: lowerAmount });
+
+  // Jumps (Ctrl+J) can be undone one by one, back to the amount before each jump, until a team bids;
+  // a bid or a new player clears them
+  const [jumps, setJumps] = useState([]);
+  useEffect(() => { setJumps([]); }, [nextBidAmount, currentPlayer?.id]);
+  const jumpTo = (cr) => {
+    setJumps(list => [...list, amt || nextBidAmount]);
+    setAmountCr(cr);
+  };
+  const undoJump = () => {
+    if (!jumps.length) return;
+    const prev = jumps[jumps.length - 1];
+    setJumps(list => list.slice(0, -1));
+    setAmountCr(Math.max(nextBidAmount, prev));
+  };
+  // Typing a table number bids the amount in the box for that team (5 = table 5, 1 then 2 = table 12), +/- step
+  // the amount, Backspace / Ctrl+Z undoes a waiting jump first, then the last bid. Views switch from the top-right menu.
+  // typedTable: the table number typed so far, while the keys wait for a possible second digit
+  const [typedTable, setTypedTable] = useState(null);
+  useTeamBidKeys(teams, {
+    onBid: (team) => placeBid(team.id, amt),
+    onUndo: () => (jumps.length ? undoJump() : undoLastBid()),
+    onRaise: raiseAmount,
+    onLower: lowerAmount,
+    onPending: setTypedTable,
+    onMiss: (typed) => showNotice(`No team at table ${typed}.`)
+  });
+
+  // Ctrl+J opens the jump dialog (works even with the cursor in a box)
+  const [jumpOpen, setJumpOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        if (isLive) setJumpOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isLive]);
+  useEffect(() => { if (!isLive) setJumpOpen(false); }, [isLive]);
 
   const loadByLookup = (e) => {
     e.preventDefault();
@@ -195,10 +279,16 @@ const ControlBar = ({ onHeight }) => {
     [runSettings.playerOrder === 'RANDOM' ? 'Shuffle players: on' : 'Shuffle players: off', () => setRunSetting('playerOrder', runSettings.playerOrder === 'RANDOM' ? 'SEQUENTIAL' : 'RANDOM'), false],
     ['Category avg price', () => setStats('CATEGORY'), false],
     ['Overall avg price', () => setStats('OVERALL'), false],
-    [isSoundMuted ? 'Unmute sounds' : 'Mute sounds', () => toggleSound(), false]
+    [isSoundMuted ? 'Unmute sounds' : 'Mute sounds', () => toggleSound(), false],
+    [calm ? 'Calm view: on (no motion, plain background)' : 'Calm view: off (same as the hall screen)', () => onCalm?.(!calm), false],
+    [arrange?.on ? 'Done arranging tiles' : 'Arrange team tiles (drag to move, renumbers tables)', () => arrange?.toggle(), false]
   ];
 
-  const field = 'h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900';
+  // Dark, low-glare controls for an operator who sits at this screen for hours: no white surfaces, muted fills,
+  // colour only where it means something (green = sold / leading, red = unsold)
+  const field = 'h-11 rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100 placeholder:text-slate-500';
+  const plain = 'inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800';
+  const divider = <span className="h-8 w-px shrink-0 bg-slate-700" />;
 
   // Back to this auction's page in the dashboard. This tab has never been on the dashboard, so tell it
   // (the same per-tab keys the dashboard keeps across a refresh) which auction to open, then load it.
@@ -215,18 +305,19 @@ const ControlBar = ({ onHeight }) => {
   return (
     <>
       {notice && (
-        <div role="status" className={`fixed left-1/2 -translate-x-1/2 z-40 rounded-xl px-4 py-2 text-sm font-bold shadow-xl ${notice.type === 'error' ? 'bg-red-600 text-white' : 'bg-lime-500 text-slate-950'}`} style={{ bottom: barH + 10 }}>
+        <div role="status" className={`fixed left-1/2 -translate-x-1/2 z-40 rounded-xl px-4 py-2 text-sm font-bold shadow-xl ${notice.type === 'error' ? 'bg-red-700 text-white' : 'bg-slate-700 text-slate-100 ring-1 ring-slate-500'}`} style={{ bottom: barH + 10 }}>
           {notice.text}
         </div>
       )}
 
-      <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-2 border-t border-violet-200 bg-violet-50/95 px-2 py-2 backdrop-blur" style={{ minHeight: BAR_H }}>
-        <button onClick={backToAuction} title="Back to this auction's page (teams, players, settings)" aria-label="Back to the auction page" className="inline-flex h-10 shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">
+      {/* Always the same order, left to right: player · amount · (teams above) · result · extras */}
+      <div ref={barRef} className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-2 border-t border-slate-700 bg-slate-900 px-2 py-2 text-slate-100" style={{ minHeight: BAR_H }}>
+        <button onClick={backToAuction} title="Back to this auction's page (teams, players, settings)" aria-label="Back to the auction page" className={plain}>
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         {!started ? (
           <>
-            <button onClick={start} disabled={activeLock.locked} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700 disabled:bg-slate-400">
+            <button onClick={start} disabled={activeLock.locked} className="inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-black text-white hover:bg-emerald-600 disabled:bg-slate-700">
               <Play className="w-4 h-4" /> Start Auction
             </button>
             <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Start with category" className={field}>
@@ -236,11 +327,12 @@ const ControlBar = ({ onHeight }) => {
           </>
         ) : (
           <>
+            {/* 1. Player */}
             <form onSubmit={loadByLookup} className="flex items-center gap-1.5 shrink-0">
-              <label className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
+              <label className="inline-flex items-center gap-1 text-sm font-bold text-slate-400">
                 <input type="radio" name="lookup" checked={lookupMode === 'SERIAL'} onChange={() => setLookupMode('SERIAL')} /> #
               </label>
-              <label className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
+              <label className="inline-flex items-center gap-1 text-sm font-bold text-slate-400">
                 <input type="radio" name="lookup" checked={lookupMode === 'ID'} onChange={() => setLookupMode('ID')} /> id
               </label>
               <input value={lookup} onChange={(e) => setLookup(e.target.value)} list="fp-player-names" placeholder="Serial / id / name" aria-label="Load player by serial, id or name" className={`${field} w-40`} />
@@ -252,57 +344,53 @@ const ControlBar = ({ onHeight }) => {
               <option value="">Default</option>
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button onClick={() => loadNextPlayer(category)} className="h-10 shrink-0 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700">New</button>
+            <button onClick={() => loadNextPlayer(category)} className="h-11 shrink-0 rounded-lg bg-sky-800 px-4 text-sm font-bold text-white hover:bg-sky-700">Next player</button>
 
-            <div className={`${field} flex w-48 shrink-0 items-center`}>
+            {divider}
+            {/* 2. Amount: − box + */}
+            <button onClick={lowerAmount} disabled={!isLive || amt <= nextBidAmount} title="Lower by the auction's bid step (key - or Down)" className={plain}>−{formatRupees(step)}</button>
+            <div className={`${field} flex w-44 shrink-0 items-center`}>
               <input
                 inputMode="numeric"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d,]/g, ''))}
                 onBlur={() => setAmountCr(amt || nextBidAmount)}
-                aria-label="Bid amount (rupees)"
-                className="w-full min-w-0 bg-transparent text-base outline-none"
+                aria-label="Bid amount"
+                className="w-full min-w-0 bg-transparent text-center text-lg font-bold tabular-nums outline-none"
               />
             </div>
-            <button onClick={raiseAmount} disabled={!isLive} title="Raise by the auction's bid step (key + or Up)" className="h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-2.5 text-sm font-bold text-blue-700 disabled:opacity-40">+{formatRupees(step)}</button>
-            <button onClick={lowerAmount} disabled={!isLive || amt <= nextBidAmount} title="Lower by the auction's bid step (key - or Down)" className="h-10 shrink-0 rounded-md border border-red-300 bg-red-50 px-2.5 text-sm font-bold text-red-700 disabled:opacity-40">-{formatRupees(step)}</button>
+            <button onClick={raiseAmount} disabled={!isLive} title="Raise by the auction's bid step (key + or Up)" className={plain}>+{formatRupees(step)}</button>
+            <button onClick={() => setJumpOpen(true)} disabled={!isLive} title="Jump the bid to any amount in lakh (Ctrl+J)" className={plain}>Jump <span className="text-xs text-slate-400">Ctrl+J</span></button>
+            {typedTable && (
+              <span role="status" className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-sky-500 bg-sky-950 px-3 text-sm font-bold text-sky-100">
+                Table {typedTable}… <span className="text-xs text-sky-300">Enter</span>
+              </span>
+            )}
+            {isLive && jumps.length > 0 && (
+              <button onClick={undoJump} title={`Back to ${formatMoney(Math.max(nextBidAmount, jumps[jumps.length - 1]))} (Backspace)`} className={`${plain} !border-amber-600 text-amber-200`}>
+                <Undo2 className="w-4 h-4" /> Undo jump
+              </button>
+            )}
 
-            <span className="h-8 w-px shrink-0 bg-slate-300" />
-            {/* Teams in one row: scroll sideways (mouse wheel or the scrollbar) when they don't all fit */}
-            <div className="flex min-w-[8rem] flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto py-1" onWheel={(e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY; }} role="group" aria-label="Bid for team">
-              {teams.map((t, i) => {
-                const check = isLive ? canTeamBid(t.id, amt) : { ok: false };
-                const leading = t.id === currentPlayer?.highestBidderTeamId;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => placeBid(t.id, amt)}
-                    disabled={!isLive || !check.ok || amt < nextBidAmount}
-                    title={`${check.ok ? `${t.name} bids ${formatMoney(amt)}` : (check.reason || t.name)}${teamKey(i) ? ` (key ${teamKey(i)})` : ''}`}
-                    className={`h-9 shrink-0 whitespace-nowrap rounded-md px-2 text-sm font-bold ${leading ? 'bg-lime-500 text-slate-950 ring-2 ring-lime-700' : 'bg-amber-400 text-amber-950 hover:bg-amber-300'} disabled:bg-slate-200 disabled:text-slate-400`}
-                  >
-                    {teamKey(i) ? `${teamKey(i)}-${t.shortCode}` : t.shortCode}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button onClick={() => sellPlayer()} disabled={!isLive || !currentPlayer?.highestBidderTeamId} className="h-10 shrink-0 rounded-md bg-emerald-600 px-3 text-lg font-bold text-white hover:bg-emerald-700 disabled:bg-emerald-300">Sold</button>
-            <button onClick={() => markPlayerUnsold()} disabled={!isLive} className="h-10 shrink-0 rounded-md bg-red-600 px-3 text-lg font-bold text-white hover:bg-red-700 disabled:bg-red-300">Unsold</button>
+            <span className="flex-1" />
+            {/* 3. Result */}
+            <button onClick={() => sellPlayer()} disabled={!isLive || !currentPlayer?.highestBidderTeamId} className="h-11 shrink-0 rounded-lg bg-emerald-700 px-5 text-lg font-bold text-white hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500">Sold</button>
+            <button onClick={() => markPlayerUnsold()} disabled={!isLive} className="h-11 shrink-0 rounded-lg bg-rose-800 px-5 text-lg font-bold text-white hover:bg-rose-700 disabled:bg-slate-800 disabled:text-slate-500">Unsold</button>
             {lastDecided && (
               <button
                 onClick={undoDecision}
                 title={`Put ${lastDecided.name} back on the table${lastDecided.status === 'SOLD' ? ` (sale for ${formatMoney(lastDecided.soldPrice)} cancelled, purse returned)` : ''}`}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                className={plain}
               >
                 <Undo2 className="w-4 h-4" /> Undo {lastDecided.status === 'SOLD' ? 'Sold' : 'Unsold'}
               </button>
             )}
+            {divider}
             <button
               onClick={() => (bidClock ? stopBidClock() : startBidClock(CLOCK_SECONDS))}
               disabled={!isLive}
               title={clockLeft === null ? `Start a ${CLOCK_SECONDS}s bid clock on every screen (restarts on every bid)` : 'Stop the clock'}
-              className={`inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-md px-2 text-lg font-bold disabled:opacity-50 ${clockLeft !== null && clockLeft <= 5 ? 'bg-red-500 text-white' : 'bg-amber-400 text-amber-950 hover:bg-amber-300'}`}
+              className={`${plain} min-w-11 text-lg ${clockLeft !== null && clockLeft <= 5 ? '!border-red-500 !bg-red-700 text-white' : ''}`}
             >
               {clockLeft === null ? <Clock className="w-5 h-5" /> : clockLeft}
             </button>
@@ -310,13 +398,13 @@ const ControlBar = ({ onHeight }) => {
         )}
 
         <div className="relative shrink-0" ref={menuRef}>
-          <button onClick={() => setMenuOpen(v => !v)} aria-expanded={menuOpen} aria-label="More actions" className="inline-flex h-10 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-3 text-slate-700 hover:bg-white">
+          <button onClick={() => setMenuOpen(v => !v)} aria-expanded={menuOpen} aria-label="More actions" className={plain}>
             <Menu className="w-5 h-5" /><ChevronDown className="w-4 h-4" />
           </button>
           {menuOpen && (
-            <div className="fixed right-2 w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-sm text-slate-800 shadow-2xl" style={{ bottom: barH + 4 }}>
+            <div className="fixed right-2 w-72 rounded-xl border border-slate-600 bg-slate-800 py-1.5 text-sm text-slate-100 shadow-2xl" style={{ bottom: barH + 4 }}>
               {menuItems.map(([label, fn, disabled]) => (
-                <button key={label} disabled={disabled} onClick={() => { fn(); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-slate-50 disabled:text-slate-300">
+                <button key={label} disabled={disabled} onClick={() => { fn(); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-slate-700 disabled:text-slate-500 disabled:hover:bg-transparent">
                   {label}
                 </button>
               ))}
@@ -324,11 +412,12 @@ const ControlBar = ({ onHeight }) => {
           )}
         </div>
         <div className="flex shrink-0 flex-col gap-1" aria-label={`${online ? 'Online' : 'Offline'}${isLive ? ', bidding open' : ''}`}>
-          <span title={online ? 'Connected' : 'Offline'} className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-green-500' : 'bg-slate-300'}`} />
-          <span title={isLive ? 'Bidding open' : 'No player up'} className={`h-2.5 w-2.5 rounded-full ${isLive ? 'bg-orange-500' : 'bg-slate-300'}`} />
+          <span title={online ? 'Connected' : 'Offline'} className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span title={isLive ? 'Bidding open' : 'No player up'} className={`h-2.5 w-2.5 rounded-full ${isLive ? 'bg-orange-500' : 'bg-slate-600'}`} />
         </div>
       </div>
       {stats && <StatsDialog kind={stats} players={players} onClose={() => setStats(null)} />}
+      {jumpOpen && <JumpDialog nextBid={nextBidAmount} onJump={jumpTo} onClose={() => setJumpOpen(false)} />}
     </>
   );
 };
@@ -338,14 +427,14 @@ const ViewMenu = ({ view, onChange }) => {
   const [open, setOpen] = useState(false);
   return (
     <div className="fixed top-3 right-3 z-30">
-      <button onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label="Screen view" className="rounded-xl bg-white px-4 py-2.5 text-slate-800 shadow-lg hover:bg-slate-50">
+      <button onClick={() => setOpen(v => !v)} aria-expanded={open} aria-label="Screen view" className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-slate-200 shadow-lg hover:bg-slate-700">
         <Menu className="w-5 h-5" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-56 rounded-xl bg-white py-1.5 text-sm text-slate-800 shadow-2xl">
+        <div className="absolute right-0 mt-1 w-56 rounded-xl border border-slate-600 bg-slate-800 py-1.5 text-sm text-slate-100 shadow-2xl">
           {VIEWS.map(([id, label]) => (
-            <button key={id} onClick={() => { onChange(id); setOpen(false); }} className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-slate-50">
-              <span className={`w-1.5 h-1.5 rounded-full ${view === id ? 'bg-slate-900' : 'bg-transparent'}`} />
+            <button key={id} onClick={() => { onChange(id); setOpen(false); }} className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-slate-700">
+              <span className={`w-1.5 h-1.5 rounded-full ${view === id ? 'bg-emerald-400' : 'bg-transparent'}`} />
               {label}
             </button>
           ))}
@@ -357,16 +446,50 @@ const ViewMenu = ({ view, onChange }) => {
 
 export const LiveScreen = () => {
   const [barH, setBarH] = useState(BAR_H);
-  const { currentUser, myAuctions, activeAuctionId, registerController, currentPlayer, selectPlayerForAuction, luckyDraws } = useAuction();
+  const { currentUser, myAuctions, activeAuctionId, registerController, currentPlayer, selectPlayerForAuction, luckyDraws, nextBidAmount, placeBid, canTeamBid, teams, editTeam } = useAuction();
   // What this Live Screen shows; changing it does not change any host screen
   const [view, setView] = useState('AUTO');
   useNewLuckyDraw(luckyDraws, () => setView('LUCKY_DRAW'));
   const [showLogin, setShowLogin] = useState(false);
   const allowed = currentUser && myAuctions.some(a => a.id === activeAuctionId);
+  // Calm view (on unless turned off in the bar's menu): this screen drops the moving backdrop and glows the hall
+  // screens use, for an operator watching it for hours. Remembered in this browser.
+  // Arrange mode: drag a team tile onto another to move it there. Positions are table numbers, so every team
+  // is renumbered by its new place (first tile = T1 = key 1 ...), saved to the auction, and every screen follows.
+  const [arranging, setArranging] = useState(false);
+  const arrange = {
+    on: arranging,
+    toggle: () => setArranging(v => !v),
+    move: (fromId, toId) => {
+      const ids = teams.map(t => t.id).filter(id => id !== fromId);
+      ids.splice(ids.indexOf(toId) + (teams.findIndex(t => t.id === fromId) < teams.findIndex(t => t.id === toId) ? 1 : 0), 0, fromId);
+      ids.forEach((id, i) => {
+        const team = teams.find(t => t.id === id);
+        if (Number(team.tableNo) !== i + 1) editTeam(id, { tableNo: i + 1 });
+      });
+    }
+  };
+
+  const [calm, setCalmState] = useState(() => {
+    try { return localStorage.getItem(CALM_KEY) !== 'off'; } catch { return true; }
+  });
+  const setCalm = (on) => {
+    setCalmState(on);
+    try { localStorage.setItem(CALM_KEY, on ? 'on' : 'off'); } catch {}
+  };
 
   useEffect(() => (allowed ? registerController() : undefined), [allowed, registerController]);
 
   // Raised hand on an Unsold / Yet-to-auction card: put that player on the table and switch to live bidding
+  // Team tiles on the screen are bid buttons: the amount is the next bid, or the higher amount raised in the bar
+  // Team tiles bid the amount in the bar's box (typed or stepped); never below the next valid bid
+  const barAmount = useRef(0);
+  const [shownAmount, setShownAmount] = useState(0);
+  const tileAmount = () => Math.max(nextBidAmount, barAmount.current || 0);
+  const setBarAmount = useRef((v) => { barAmount.current = v; setShownAmount(v); }).current;
+  const bidFromTile = (t) => placeBid(t.id, tileAmount());
+  const tileCanBid = (t) => canTeamBid(t.id, tileAmount());
+
   const pickPlayer = (p) => {
     const onTable = currentPlayer?.status === 'CURRENT' && currentPlayer.highestBidderTeamId;
     if (onTable && !window.confirm(`${currentPlayer.name} has bids on the table. Put them back in the queue and take ${p.name} instead?`)) return;
@@ -392,9 +515,15 @@ export const LiveScreen = () => {
 
   return (
     <>
-      <HostScreen forcedView={view} bottomInset={barH} rightGap onPickPlayer={pickPlayer} viewKeys={false} />
+      <HostScreen forcedView={view} bottomInset={barH} rightGap onPickPlayer={pickPlayer} viewKeys={false} onTeamBid={bidFromTile} canBid={tileCanBid} tileBid={Math.max(nextBidAmount, shownAmount || 0)} calm={calm} arrange={arrange} />
       <ViewMenu view={view} onChange={setView} />
-      <ControlBar onHeight={setBarH} />
+      <ControlBar onHeight={setBarH} onAmount={setBarAmount} calm={calm} onCalm={setCalm} arrange={arrange} />
+      {arranging && (
+        <div className="fixed left-1/2 top-3 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-sky-500 bg-slate-900 px-4 py-2 text-sm font-bold text-sky-100 shadow-2xl">
+          Drag a team tile to its new place · table numbers and keys follow the place (first = T1) · bidding is paused
+          <button onClick={() => setArranging(false)} className="rounded-lg bg-sky-700 px-3 py-1.5 font-black text-white hover:bg-sky-600">Done</button>
+        </div>
+      )}
     </>
   );
 };

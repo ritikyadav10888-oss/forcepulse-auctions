@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSessionState, clearSessionState } from '../../hooks/useSessionState';
 import { useAuction } from '../../context/AuctionContext';
 import { PLANS, getPlan } from '../../config/forcePulse';
@@ -77,6 +77,12 @@ export const AdminPanel = () => {
     window.scrollTo(0, 0);
   };
 
+  // The open auction (or the one being edited) is made the active one again if browsing changed it
+  const wanted = formView?.mode === 'edit' ? formView.id : setupId;
+  useEffect(() => {
+    if (wanted && wanted !== activeAuctionId && auctions.some(a => a.id === wanted)) setActiveAuctionId(wanted);
+  }, [wanted, activeAuctionId, auctions.length]);
+
   const openCreate = (owner = '') => { setFormView({ mode: 'create', owner }); window.scrollTo(0, 0); };
   const openEdit = (id) => { setActiveAuctionId(id); setFormView({ mode: 'edit', id }); window.scrollTo(0, 0); };
 
@@ -91,12 +97,12 @@ export const AdminPanel = () => {
     );
   }
   if (formView?.mode === 'edit' && auctions.some(a => a.id === formView.id)) {
-    if (activeAuctionId !== formView.id) return null;
+    if (activeAuctionId !== formView.id) return <p className="py-16 text-center text-sm font-semibold text-slate-500">Opening auction…</p>;
     return <AuctionForm key={formView.id} mode="edit" onBack={() => setFormView(null)} />;
   }
 
   if (setupId && auctions.some(a => a.id === setupId)) {
-    if (activeAuctionId !== setupId) return null;
+    if (activeAuctionId !== setupId) return <p className="py-16 text-center text-sm font-semibold text-slate-500">Opening auction…</p>;
     return <AuctionWorkspace key={setupId} onBack={() => setSetupId(null)} backLabel="Force Pulse admin" initialTab={setupTab} />;
   }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuction, isPublicAuction } from '../../context/AuctionContext';
+import { useAuction, isPublicAuction, byPinned } from '../../context/AuctionContext';
 import { ArrowLeft, ArrowRight, Calendar, Search, Users, Trophy, Wallet, Radio, Gavel, X } from 'lucide-react';
 import { formatMoney } from '../../services/money';
 import { Badge, StatusBadge, Stripes, Tabs, EmptyState, Button, LiveDot } from '../ui';
@@ -91,9 +91,9 @@ export const BrowseAuctions = ({ onBack, onOpenAuction }) => {
   const list = auctions
     .filter(a => a.status === tab)
     .filter(a => !q || a.title.toLowerCase().includes(q) || (a.sport || '').toLowerCase().includes(q))
-    .sort((a, b) => tab === 'PAST'
+    .sort((a, b) => byPinned(a, b) || (tab === 'PAST'
       ? new Date(b.startDate) - new Date(a.startDate)
-      : new Date(a.startDate) - new Date(b.startDate));
+      : new Date(a.startDate) - new Date(b.startDate)));
 
   return (
     <div className="space-y-8 pb-20">

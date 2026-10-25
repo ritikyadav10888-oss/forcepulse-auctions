@@ -31,7 +31,8 @@ export const PlayerCatalog = () => {
   ];
   const q = searchTerm.toLowerCase();
   const inCategory = (p, cat) => cat === 'ALL' || p.category.toLowerCase() === cat.toLowerCase();
-  const filteredPlayers = players.filter(p => matchesStatus(p, statusFilter) && inCategory(p, categoryFilter)
+  // Listed A to Z by name
+  const filteredPlayers = [...players].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' })).filter(p => matchesStatus(p, statusFilter) && inCategory(p, categoryFilter)
     && [p.name, p.role, p.country].some(v => (v || '').toLowerCase().includes(q)));
 
   return (

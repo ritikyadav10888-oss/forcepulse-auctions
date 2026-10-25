@@ -36,24 +36,37 @@ export const diffCollection = (prev, next, isMap = false) => {
   return { upserts, deletes };
 };
 
-// Changes made in one tick go to the server together, one request at a time, in order
+// Changes go to the server in order, one request at a time. Everything made while a request is on its way
+// goes together in the next one, so fast bidding never builds a queue of requests that screens lag behind.
 let pending = [];
-let chain = Promise.resolve();
+let sending = false;
+let scheduled = false;
 let onSaveError = () => {};
 export const setSaveErrorHandler = (fn) => { onSaveError = fn; };
 
 export const queueChange = (collection, upserts, deletes) => {
   if (!upserts.length && !deletes.length) return;
-  if (pending.length === 0) queueMicrotask(flush);
   pending.push({ collection, upserts, deletes });
+  if (!sending && !scheduled) {
+    scheduled = true;
+    queueMicrotask(flush);
+  }
 };
 
-const flush = () => {
+const flush = async () => {
+  scheduled = false;
+  if (sending || pending.length === 0) return;
   const changes = pending;
   pending = [];
-  chain = chain
-    .then(() => api('/api/sync', { method: 'POST', body: { changes }, headers: { 'x-client-id': clientId } }))
-    .catch(err => onSaveError(err));
+  sending = true;
+  try {
+    await api('/api/sync', { method: 'POST', body: { changes }, headers: { 'x-client-id': clientId } });
+  } catch (err) {
+    onSaveError(err);
+  } finally {
+    sending = false;
+    if (pending.length) flush();
+  }
 };
 
 // ---------- Live feed ----------

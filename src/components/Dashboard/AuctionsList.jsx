@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useAuction, isManagedAuction } from '../../context/AuctionContext';
+import { useAuction, isManagedAuction, byPinned } from '../../context/AuctionContext';
 import { screenUrl } from '../Admin/ScreensManager';
 import {
   Search, Filter, X, Calendar, Eye, Pencil, Radio, Users, MoreVertical, Monitor, Youtube, Link2, Trash2,
@@ -59,7 +59,7 @@ export const AuctionsList = ({ mode = 'user', onCreate, onView, onEdit }) => {
       (mode === 'admin' && ((a.ownerEmail || '').includes(q) || ownerName(a.ownerEmail).toLowerCase().includes(q))))
   );
   // Default order: live first, then upcoming, then completed
-  if (!sort) rows = [...rows].sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3));
+  if (!sort) rows = [...rows].sort((a, b) => byPinned(a, b) || (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3));
   if (sort === 'DATE_DESC') rows = [...rows].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
   if (sort === 'DATE_ASC') rows = [...rows].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
   if (sort === 'TITLE') rows = [...rows].sort((a, b) => a.title.localeCompare(b.title));

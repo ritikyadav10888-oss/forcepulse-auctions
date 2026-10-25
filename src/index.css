@@ -40,6 +40,26 @@
   background: #84cc16;
 }
 
+/* Tailwind writes inset-0 as the `inset` shorthand (Chrome 87+). vMix 24–26 browser inputs run an older
+   Chromium that ignores it, which collapses full-screen overlay boxes to nothing, so spell out the sides too. */
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+.-inset-1\.5 { top: -0.375rem; right: -0.375rem; bottom: -0.375rem; left: -0.375rem; }
+
+/* Calm view (Live Screen operator, hours at a time): nothing loops or glows. One-off entrance animations
+   (a new bid, a sold stamp) still play once so changes are noticed. */
+.fp-calm .fp-price-glow,
+.fp-calm .fp-glow,
+.fp-calm .fp-asking,
+.fp-calm .fp-ping,
+.fp-calm .fp-shake,
+.fp-calm .fp-glow-breathe,
+.fp-calm .fp-lines,
+.fp-calm .fp-beam,
+.fp-calm .animate-pulse { animation: none !important; }
+.fp-calm .fp-price-glow { text-shadow: none !important; }
+.fp-calm .fp-sweep,
+.fp-calm .blur-3xl { display: none; }
+
 /* Glassmorphism & TPA Cards */
 .tpa-card {
   background: #ffffff;
@@ -147,6 +167,13 @@
 }
 .fp-card-in { animation: fp-card-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: center; }
 .fp-photo-zoom { animation: fp-photo-zoom 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* Stream ribbon: the player photo rises up out of the ribbon */
+@keyframes fp-photo-rise {
+  from { opacity: 0; transform: translateY(70%) scale(0.85); }
+  70% { opacity: 1; transform: translateY(-4%) scale(1.02); }
+  to { opacity: 1; transform: none; }
+}
+.fp-photo-rise { animation: fp-photo-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .fp-sweep { animation: fp-sweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s both; }
 
 .fp-team-in { animation: fp-team-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
@@ -204,6 +231,16 @@
 .fp-hand-raise { animation: fp-hand-raise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: 50% 90%; }
 
 .fp-slide-in-left { animation: fp-slide-in-left 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes fp-slide-in-right {
+  from { opacity: 0; transform: translateX(80px); }
+  to { opacity: 1; transform: none; }
+}
+.fp-slide-in-right { animation: fp-slide-in-right 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s both; }
+@keyframes fp-sweep-in {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+.fp-sweep-in { animation: fp-sweep-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: left center; }
 .fp-rise { animation: fp-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .fp-bid-pop { animation: fp-bid-pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; display: inline-block; }
 .fp-flash { animation: fp-flash 0.8s ease-out; }
@@ -239,7 +276,7 @@
 @media (prefers-reduced-motion: reduce) {
   .fp-sweep, .fp-shine, .fp-spark, .fp-raise-float, .fp-beam { display: none; }
   .fp-lines, .fp-glow-breathe { animation: none !important; }
-  .fp-slide-in-left, .fp-rise, .fp-bid-pop, .fp-flash, .fp-stamp, .fp-banner-up, .fp-shake, .fp-glow, .fp-team-in, .fp-ping, .fp-card-in, .fp-photo-zoom, .fp-hand-raise,
+  .fp-slide-in-left, .fp-slide-in-right, .fp-sweep-in, .fp-photo-rise, .fp-rise, .fp-bid-pop, .fp-flash, .fp-stamp, .fp-banner-up, .fp-shake, .fp-glow, .fp-team-in, .fp-ping, .fp-card-in, .fp-photo-zoom, .fp-hand-raise,
   .fp-price-thump, .fp-price-glow, .fp-asking {
     animation: none !important;
   }

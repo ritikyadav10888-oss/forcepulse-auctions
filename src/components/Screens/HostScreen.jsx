@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PlayerPhoto } from '../PlayerPhoto';
-import { useAuction, useSecondsLeft, getBidIncrement } from '../../context/AuctionContext';
+import { useAuction, useSecondsLeft } from '../../context/AuctionContext';
 import { DEFAULT_TEAM_LOGO, LEGACY_TEAM_LOGO } from '../../config/placeholders';
 import { Hand, Lock, Search, X } from 'lucide-react';
 import { FORCE_PULSE_LOGO } from '../ui';
 import { formatMoney, moneyParts } from '../../services/money';
+import { teamKey, tableNumber, dragTileProps } from '../../hooks/useTeamBidKeys';
 import { Badge, Stripes } from '../ui';
 
 // Full-screen venue / projector display. Each window picks its own view (keys 1-5 here, the ☰ menu on the
@@ -76,7 +77,7 @@ const TopBar = ({ auction, players, rightGap = false }) => {
 // Every team's money at the top; the team bidding right now lights up with its bid
 const TeamStrip = ({ teams, player, maxSquad, getTeamMaxBid }) => {
   const compact = teams.length > 8;
-  // 11+ teams: no room for logos, the code and purse matter more
+  // 11+ teams: smaller logos and names so all of them still fit on one row
   const tight = teams.length > 10;
   const activeTeamId = player && (player.status === 'SOLD' ? player.soldToTeamId : player.status === 'CURRENT' ? player.highestBidderTeamId : null);
   return (
@@ -86,17 +87,29 @@ const TeamStrip = ({ teams, player, maxSquad, getTeamMaxBid }) => {
         return (
           <div
             key={t.id}
-            className={`flex-1 min-w-0 flex items-center gap-2.5 rounded-xl border px-3 py-2 transition-all duration-500 ${
+            className={`flex-1 min-w-0 flex ${tight ? 'flex-col gap-1 px-2' : 'items-center gap-2.5 px-3'} rounded-xl border py-2 transition-all duration-500 ${
               active ? 'border-lime-400 bg-lime-500 text-slate-950 shadow-lg shadow-lime-500/30 scale-[1.03]' : 'border-white/10 bg-slate-900/75'
             }`}
           >
-            <img src={t.logo} alt="" className={`${tight ? 'hidden' : compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-lg object-contain bg-white/5 shrink-0 ${active ? 'ring-2 ring-slate-950' : ''}`} />
-            {/* Three fixed lines that never wrap, so every team card keeps the same height whatever the team count */}
-            <div className="min-w-0 flex-1 leading-tight whitespace-nowrap">
-              <div className="flex items-baseline justify-between gap-1.5">
-                <span className={`${compact ? 'text-base' : 'text-lg'} min-w-0 font-extrabold truncate`}>{compact ? t.shortCode : t.name}</span>
-                <span className={`shrink-0 ${compact ? 'text-xs' : 'text-sm'} font-bold ${active ? 'text-slate-800' : 'text-slate-400'}`}>{t.squadCount}/{maxSquad}</span>
+            {tight ? (
+              // 11+ teams: logo and squad on top, then the full name on up to two lines
+              <div className="flex items-center justify-between gap-1">
+                <img src={t.logo} alt="" className={`w-8 h-8 rounded-full object-contain bg-white shrink-0 ${active ? 'ring-2 ring-slate-950' : ''}`} />
+                <span className={`text-xs font-bold ${active ? 'text-slate-800' : 'text-slate-400'}`}>{t.squadCount}/{maxSquad}</span>
               </div>
+            ) : (
+              <img src={t.logo} alt="" className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-full object-contain bg-white shrink-0 ${active ? 'ring-2 ring-slate-950' : ''}`} />
+            )}
+            {/* Fixed lines, so every team card keeps the same height whatever the team count */}
+            <div className="min-w-0 flex-1 leading-tight whitespace-nowrap">
+              {tight ? (
+                <div className="line-clamp-2 min-h-[2lh] whitespace-normal text-[11px] font-extrabold leading-tight" title={t.name}>{t.name}</div>
+              ) : (
+                <div className="flex items-baseline justify-between gap-1.5">
+                  <span className={`${compact ? 'text-sm' : 'text-lg'} min-w-0 font-extrabold truncate`} title={t.name}>{t.name}</span>
+                  <span className={`shrink-0 ${compact ? 'text-xs' : 'text-sm'} font-bold ${active ? 'text-slate-800' : 'text-slate-400'}`}>{t.squadCount}/{maxSquad}</span>
+                </div>
+              )}
               <div className={`font-bebas text-2xl leading-none truncate ${active ? 'text-slate-950' : 'text-lime-400'}`}>{formatMoney(t.purseRemaining)}</div>
               <div className={`${compact ? 'text-xs' : 'text-sm'} font-bold truncate ${active ? 'text-slate-800' : player?.status === 'CURRENT' ? 'text-sky-300' : 'text-slate-400'}`}>
                 {active && player.status === 'CURRENT' ? `Bid ${formatMoney(player.currentBid)}`
@@ -495,18 +508,32 @@ const TeamWallPlayer = ({ player, teams, bids, lot, asking, nextBid, canBid, get
 
 const CANVAS_W = 1600;
 const CANVAS_H = 900;
+// Scaled so the 1600×900 design fits, then stretched on the long side to fill the whole window: a screen
+// that isn't 16:9 gets a wider (or taller) layout instead of empty bands at the sides
+// The size is read from the frame itself, not the window, so a scrollbar or the Live Screen's bar never makes the
+// layout wider than what is visible (which would clip the right-hand edge).
 const FitCanvas = ({ children, bottomInset = 0, backdrop = null }) => {
-  const [scale, setScale] = useState(1);
+  const frameRef = useRef(null);
+  const measure = () => {
+    const el = frameRef.current;
+    const w = el?.clientWidth || document.documentElement.clientWidth || CANVAS_W;
+    const h = Math.max(1, el?.clientHeight || (document.documentElement.clientHeight || CANVAS_H) - bottomInset);
+    const scale = Math.min(w / CANVAS_W, h / CANVAS_H);
+    return { scale, w: w / scale, h: h / scale };
+  };
+  const [box, setBox] = useState(measure);
   useEffect(() => {
-    const fit = () => setScale(Math.min(window.innerWidth / CANVAS_W, (window.innerHeight - bottomInset) / CANVAS_H));
+    const fit = () => setBox(measure());
     fit();
     window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
+    const ro = typeof ResizeObserver !== 'undefined' && frameRef.current ? new ResizeObserver(fit) : null;
+    ro?.observe(frameRef.current);
+    return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
   }, [bottomInset]);
   return (
-    <div className="fixed inset-x-0 top-0 overflow-hidden bg-slate-950 flex items-center justify-center" style={{ bottom: bottomInset }}>
+    <div ref={frameRef} className="fixed inset-x-0 top-0 overflow-hidden bg-slate-950" style={{ bottom: bottomInset }}>
       {backdrop}
-      <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H, flex: 'none', transform: `scale(${scale})` }}>{children}</div>
+      <div className="absolute left-0 top-0" style={{ width: box.w, height: box.h, transform: `scale(${box.scale})`, transformOrigin: '0 0' }}>{children}</div>
     </div>
   );
 };
@@ -851,7 +878,6 @@ const agoText = (bid) => {
 };
 
 // Auctions run in points: steps under a lakh read as plain points (10,000 pts rather than 0.1 Lakh)
-const stepText = (cr) => (cr > 0 && cr < 0.01 ? `${Math.round(cr * 1e7).toLocaleString('en-IN')} pts` : formatMoney(cr));
 
 const clockCall = (left) => (left === 0 ? 'Last call' : left <= 5 ? 'Going twice' : left <= 10 ? 'Going once' : 'Bidding open');
 
@@ -877,31 +903,37 @@ const ClockRing = ({ left, total }) => {
   );
 };
 
-// Short amount for narrow team cards: 94.5L, 1 Cr
-const shortMoney = (cr) => {
-  const { value, unit } = moneyParts(cr);
-  return unit === 'Lakh' ? `${value}L` : `${value} Cr`;
-};
-
-// Team row sizes by team count: 4 or fewer get hall-sized text, 9+ show the code instead of the name
+// Team panel sizes by tiles per row: up to 4 get hall-sized text, up to 6 a little smaller, more than that compact
 const TEAM_ROW_SIZES = {
-  few: { pad: 'px-5 py-3.5', gap: 'gap-3', chip: 'w-12 h-12 text-sm', name: 'text-3xl', purse: 'text-6xl', meta: 'text-2xl', mt: 'mt-2' },
-  some: { pad: 'px-4 py-3', gap: 'gap-2.5', chip: 'w-10 h-10 text-xs', name: 'text-xl', purse: 'text-5xl', meta: 'text-lg', mt: 'mt-1.5' },
-  many: { pad: 'px-3 py-2.5', gap: 'gap-2', chip: '', name: 'text-xl', purse: 'text-4xl', meta: 'text-base', mt: 'mt-1' }
+  few: { pad: 'px-5 py-3', chip: 'w-12 h-12 text-sm', name: 'text-3xl', squad: 'text-2xl', label: 'text-sm', num: 'text-6xl', unit: 'text-2xl' },
+  some: { pad: 'px-4 py-2.5', chip: 'w-10 h-10 text-xs', name: 'text-2xl', squad: 'text-xl', label: 'text-xs', num: 'text-5xl', unit: 'text-xl' },
+  many: { pad: 'px-3 py-2', chip: 'w-8 h-8 text-[10px]', name: 'text-lg', squad: 'text-base', label: 'text-[10px]', num: 'text-4xl', unit: 'text-base' }
 };
 
-const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, clock, getTeamMaxBid }) => {
+// Big number with a small unit beside it ("9.45 LAKH"), so it reads from the back of the hall
+const TeamMoney = ({ cr, z, className = '' }) => {
+  if (cr === Infinity) return <span className={`font-bebas leading-none ${z.num} ${className}`}>No limit</span>;
+  const { value, unit } = moneyParts(cr);
+  return (
+    <span className={`font-bebas leading-none tabular-nums whitespace-nowrap ${z.num} ${className}`}>
+      {value}<span className={`ml-1 ${z.unit}`}>{unit}</span>
+    </span>
+  );
+};
+
+const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, clock, getTeamMaxBid, onTeamBid, canBid, tileBid, arrange }) => {
   const teamIndex = (id) => teams.findIndex(t => t.id === id);
   const leaderId = player.status === 'SOLD' ? player.soldToTeamId : player.highestBidderTeamId;
   const leader = teams.find(t => t.id === leaderId);
   const isLive = player.status === 'CURRENT';
-  // The big number is the bid a team has actually made (or the base price before any bid). An amount the
-  // auctioneer raised to with + is only asked for, so it shows under "Next bid", never as the current bid.
-  const price = player.status === 'SOLD' ? player.soldPrice : player.highestBidderTeamId ? player.currentBid : player.basePrice;
-  const asked = isLive && asking ? asking : null;
-  const step = getBidIncrement(auction, player.currentBid || nextBid, player);
-  const racing = new Set(bids.map(b => b.teamId)).size;
+  // The big number is the bid a team has actually made (or the base price before any bid). While the auctioneer
+  // raises the price with +, it counts up to that amount in amber with no label above it.
+  const made = player.status === 'SOLD' ? player.soldPrice : player.highestBidderTeamId ? player.currentBid : player.basePrice;
+  const raised = isLive && asking ? asking : null;
+  const price = raised || made;
   const left = useSecondsLeft(clock);
+  // Teams that have bid on this player so far
+  const racing = new Set(bids.map(b => b.teamId)).size;
   const stats = statList(player.stats).slice(0, 3);
   const details = [player.battingStyle, player.bowlingStyle, player.age ? `Age ${player.age}` : ''].filter(Boolean).join(' · ');
   const maxSquad = auction.maxSquadSize || 1;
@@ -913,12 +945,192 @@ const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, c
     return () => clearInterval(t);
   }, []);
 
-  const label = player.status === 'SOLD' ? 'Sold for' : player.status === 'UNSOLD' ? 'Unsold' : player.highestBidderTeamId ? 'Current bid' : 'Base price';
+  // One team tile. On the Live Screen it is that team's bid button (the amount in the bar's box), and in Arrange
+  // mode it can be dragged to a new place (renumbering the tables). Teams that can't afford the next bid or have
+  // a full squad are dimmed.
+  const arranging = !!arrange?.on;
+  const tileFor = (t, i) => {
+    const active = t.id === leaderId;
+    const maxBid = getTeamMaxBid ? getTeamMaxBid(t) : null;
+    const full = t.squadCount >= maxSquad;
+    const out = isLive && !active && (full || (maxBid !== null && maxBid < nextBid));
+    const check = onTeamBid && isLive && canBid ? canBid(t) : null;
+    const Tile = onTeamBid ? 'button' : 'div';
+    const bidProps = onTeamBid ? {
+      type: 'button',
+      onClick: () => { if (!arranging) onTeamBid(t); },
+      disabled: !arranging && (!isLive || (check && !check.ok)),
+      ...dragTileProps(arrange, t),
+      title: check && !check.ok ? check.reason || t.name : `${t.name}: bid ${formatMoney(tileBid || asking || nextBid)}${teamKey(i, t) ? ` (key ${teamKey(i, t)})` : ''}`
+    } : {};
+    const look = `${active ? 'bg-slate-900 ring-4 ring-lime-400 shadow-lg shadow-lime-500/30' : 'bg-slate-900/95 ring-1 ring-white/15'} ${out && !arranging ? 'opacity-40' : ''} ${arranging ? 'cursor-move !ring-2 !ring-sky-400' : ''} ${onTeamBid ? 'cursor-pointer hover:bg-slate-800 hover:ring-2 hover:ring-white/50 active:scale-[0.97] disabled:cursor-not-allowed disabled:hover:bg-slate-900/95 disabled:hover:ring-white/15 disabled:active:scale-100' : ''}`;
+    return { active, maxBid, full, Tile, bidProps, look, key: active ? `${t.id}-${bids[0]?.id || 'lead'}` : t.id };
+  };
+  const badge = (x) => x.active && <span className="absolute -top-2.5 right-3 rounded-full bg-lime-400 px-2 text-xs font-black text-slate-950">{player.status === 'SOLD' ? 'BOUGHT' : 'LEADING'}</span>;
+
+  // Hall screens: every team's name, purse left and max bid along the bottom, labelled and the same size so the hall
+  // can read them; more than 6 teams split into rows of up to 6, so names never have to be dropped
+  const perRow = teams.length <= 6 ? teams.length : Math.ceil(teams.length / Math.ceil(teams.length / 6));
+  const z = TEAM_ROW_SIZES[perRow <= 4 ? 'few' : perRow <= 6 ? 'some' : 'many'];
+  const teamPanel = (
+    <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.max(perRow, 1)}, minmax(0, 1fr))` }}>
+      {teams.map((t, i) => {
+        const x = tileFor(t, i);
+        return (
+          <x.Tile key={x.key} {...x.bidProps} className={`relative block w-full text-left rounded-xl transition-all duration-500 fp-rise ${z.pad} ${x.look}`} style={{ animationDelay: x.active ? '0s' : `${i * 0.04}s` }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <TeamChip team={t} index={i} size={z.chip} />
+              <span className={`min-w-0 flex-1 truncate font-extrabold text-white ${z.name}`}>{t.name}</span>
+              <span className={`shrink-0 font-black tabular-nums ${x.full ? 'text-red-300' : 'text-white'} ${z.squad}`}>{t.squadCount}/{maxSquad}</span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <div className="min-w-0">
+                <div className={`font-black uppercase tracking-[0.15em] text-slate-300 ${z.label}`}>Purse</div>
+                <TeamMoney cr={t.purseRemaining} z={z} className="text-lime-400" />
+              </div>
+              <div className="min-w-0 border-l border-white/15 pl-2">
+                <div className={`font-black uppercase tracking-[0.15em] text-slate-300 ${z.label}`}>{x.full ? 'Squad' : 'Max bid'}</div>
+                {x.full
+                  ? <span className={`font-bebas leading-none text-red-300 ${z.num}`}>Full</span>
+                  : x.maxBid !== null && <TeamMoney cr={x.maxBid} z={z} className="text-sky-300" />}
+              </div>
+            </div>
+            {badge(x)}
+            {/* Table number: the auctioneer calls teams by their table in the hall */}
+            <span className="absolute -top-2.5 left-3 min-w-[1.75rem] rounded-md bg-slate-700 px-1.5 text-center text-sm font-black text-white ring-1 ring-slate-500">{tableNumber(t, i)}</span>
+          </x.Tile>
+        );
+      })}
+    </div>
+  );
+
+  // Live Screen: the teams as cards, 3 per row for up to 12 teams (2 for 4 or fewer, 4 past 12), the rows sharing
+  // the height so every team stays visible above the control bar
+  const liveCols = teams.length <= 4 ? 2 : teams.length <= 12 ? 3 : 4;
+  const liveRows = Math.max(1, Math.ceil(teams.length / liveCols));
+  const lz = TEAM_ROW_SIZES[liveRows <= 3 && liveCols <= 3 ? 'few' : 'some'];
+  const teamGrid = (
+    <section className="grid min-h-0 gap-2.5" style={{ gridTemplateColumns: `repeat(${liveCols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${liveRows}, minmax(0, 1fr))` }}>
+      {teams.map((t, i) => {
+        const x = tileFor(t, i);
+        return (
+          <x.Tile key={x.key} {...x.bidProps} className={`relative flex min-h-0 w-full flex-col justify-center gap-2 rounded-xl p-3 text-left transition-all duration-500 ${x.look}`}>
+            <div className="flex min-w-0 items-center gap-2.5">
+              {/* Table number: the auctioneer calls teams by it, and typing it bids */}
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-bebas text-3xl leading-none ${x.active ? 'bg-lime-400 text-slate-950' : 'bg-slate-700 text-white'}`}>{tableNumber(t, i)}</span>
+              <TeamChip team={t} index={i} size="w-10 h-10 text-xs" />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className={`block truncate font-extrabold text-white ${lz.name}`}>{t.name}</span>
+                <span className={`block text-sm font-bold ${x.full ? 'text-red-300' : 'text-slate-400'}`}>
+                  {t.squadCount}/{maxSquad} players{x.active && <span className="ml-2 rounded-full bg-lime-400 px-2 text-[11px] font-black text-slate-950">{player.status === 'SOLD' ? 'BOUGHT' : 'LEADING'}</span>}
+                </span>
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0 rounded-lg bg-slate-950/50 px-3 py-1.5">
+                <div className={`font-black uppercase tracking-[0.15em] text-slate-400 ${lz.label}`}>Purse</div>
+                <TeamMoney cr={t.purseRemaining} z={lz} className="text-lime-400" />
+              </div>
+              <div className="min-w-0 rounded-lg bg-slate-950/50 px-3 py-1.5">
+                <div className={`font-black uppercase tracking-[0.15em] text-slate-400 ${lz.label}`}>{x.full ? 'Squad' : 'Max bid'}</div>
+                {x.full
+                  ? <span className={`font-bebas leading-none text-red-300 ${lz.num}`}>Full</span>
+                  : x.maxBid !== null && <TeamMoney cr={x.maxBid} z={lz} className="text-sky-300" />}
+              </div>
+            </div>
+          </x.Tile>
+        );
+      })}
+    </section>
+  );
+
+  // Live Screen player side: every detail the player has, as cards (2 per row), filling the space beside the photo
+  const infoCards = [
+    ['Role', player.role && player.role !== player.category ? player.role : ''],
+    ['Age', player.age],
+    ['Jersey', player.jerseyNumber ? `#${player.jerseyNumber}` : ''],
+    ['Batting', player.battingStyle],
+    ['Bowling', player.bowlingStyle],
+    ['Previous team', player.previousTeam],
+    ...Object.entries(player.extraInfo || {})
+  ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+
+  const label = player.status === 'SOLD' ? 'Sold for' : player.status === 'UNSOLD' ? 'Unsold' : raised ? '' : player.highestBidderTeamId ? 'Current bid' : 'Base price';
 
   return (
     <div key={player.id} className="h-full flex flex-col gap-4 px-8 pt-5 pb-4">
-      <div className="flex-1 min-h-0 grid grid-cols-[380px_1fr_380px] gap-4">
+      <div className={`flex-1 min-h-0 grid gap-4 ${onTeamBid ? 'grid-cols-[400px_minmax(0,1fr)]' : 'grid-cols-[380px_1fr_380px]'}`}>
+        {/* Live Screen: a narrow player column (photo, name, details as cards, base price) with a compact current
+            bid under it instead of a separate price panel, so the team cards get the rest of the width */}
+        {onTeamBid && (
+        <section className="relative flex min-h-0 flex-col gap-3 rounded-2xl bg-slate-900/90 p-4 ring-1 ring-white/10 fp-slide-in-left">
+          <div className="relative min-h-[8rem] flex-1 overflow-hidden rounded-xl bg-slate-800">
+            <PlayerPhoto src={player.image} alt={player.name} className={player.status === 'UNSOLD' ? 'grayscale opacity-60' : ''} />
+            <span className="absolute top-2.5 left-2.5 rounded-md bg-slate-950/85 px-2.5 py-1 text-xs font-black tracking-wider">LOT {lot.n} / {lot.total}</span>
+            <Stamp status={player.status} compact />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {player.category && <span className="rounded-md bg-lime-500/15 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-lime-300 ring-1 ring-lime-500/30">{player.category}</span>}
+            {player.role && player.role !== player.category && <span className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-slate-200">{player.role}</span>}
+            {player.isOverseas && <span className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-slate-200">✈ Overseas</span>}
+          </div>
+          <h1 className={`font-bebas leading-[0.9] tracking-wide break-words ${player.name.length > 16 ? 'text-5xl' : 'text-6xl'}`}>{player.name}</h1>
+          {(infoCards.length > 0 || player.basePrice) && (
+            <div className="grid grid-cols-2 gap-2">
+              {infoCards.slice(0, 5).map(([k, v]) => (
+                <div key={k} className="min-w-0 rounded-lg bg-slate-950/60 px-3 py-1.5 ring-1 ring-white/10">
+                  <div className="truncate text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">{k}</div>
+                  <div className="truncate text-xl font-extrabold text-white">{v}</div>
+                </div>
+              ))}
+              <div className="min-w-0 rounded-lg bg-slate-950/60 px-3 py-1.5 ring-1 ring-white/10">
+                <div className="truncate text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">Base price</div>
+                <div className="truncate text-xl font-extrabold text-white">{formatMoney(player.basePrice)}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Compact current bid: price, who holds it, teams in the race and the bid clock */}
+          <div className="rounded-xl bg-slate-950/60 px-4 py-3 ring-1 ring-white/10">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className={`min-h-[1rem] text-xs font-black uppercase tracking-[0.3em] ${player.status === 'UNSOLD' ? 'text-red-400' : 'text-slate-400'}`}>{label || 'Next bid'}</div>
+                <div className={`relative font-bebas leading-none whitespace-nowrap ${player.status === 'UNSOLD' ? 'text-slate-500' : raised ? 'text-amber-300' : 'text-lime-400'}`}>
+                  <span className="text-7xl tabular-nums">
+                    <AnimatedPrice value={price} thump={isLive} unitClassName="ml-2 text-4xl uppercase" />
+                  </span>
+                  {isLive && <RaiseTag price={price} className={`-top-3 -right-6 rounded-full px-2 py-0.5 font-sans text-sm font-black text-slate-950 ${raised ? 'bg-amber-400' : 'bg-lime-400'}`} />}
+                </div>
+              </div>
+              {isLive && (
+                <div className="flex shrink-0 items-end gap-3">
+                  <div className="text-center">
+                    <div className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">In race</div>
+                    <div key={racing} className="font-bebas text-4xl leading-none fp-rise">{racing}</div>
+                  </div>
+                  {left !== null && <div className={`rounded-lg px-2 py-1 font-bebas text-4xl leading-none tabular-nums ${left <= 5 ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'}`}>{left}s</div>}
+                </div>
+              )}
+            </div>
+            <div className="mt-2">
+              {leader ? (
+                <div key={`${leader.id}-${bids[0]?.id || player.status}`} className={`flex items-center gap-3 rounded-full px-3 py-1.5 ring-1 fp-rise ${player.status === 'SOLD' ? 'bg-lime-500 text-slate-950 ring-lime-300' : 'bg-slate-900 ring-white/10'}`}>
+                  <TeamChip team={leader} index={teamIndex(leader.id)} size="w-9 h-9 text-[10px]" />
+                  <div className="min-w-0 leading-tight">
+                    <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${player.status === 'SOLD' ? 'text-slate-800' : 'text-slate-400'}`}>{player.status === 'SOLD' ? 'Sold to' : 'Highest bidder'}</div>
+                    <div className="truncate text-xl font-extrabold">{leader.name}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-base font-bold text-slate-400">{player.status === 'UNSOLD' ? 'No team bid · back to the pool' : 'Waiting for the first bid'}</div>
+              )}
+            </div>
+          </div>
+        </section>
+        )}
+
         {/* Player */}
+        {!onTeamBid && (
         <section className="relative flex flex-col min-h-0 rounded-2xl bg-slate-900/90 ring-1 ring-white/10 p-5 fp-slide-in-left">
           <div className="relative flex-1 min-h-0 overflow-hidden rounded-xl bg-slate-800">
             <PlayerPhoto src={player.image} alt={player.name} className={player.status === 'UNSOLD' ? 'grayscale opacity-60' : ''} />
@@ -946,17 +1158,19 @@ const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, c
             <span className="font-bebas text-3xl leading-none">{formatMoney(player.basePrice)}</span>
           </div>
         </section>
+        )}
 
-        {/* Current bid */}
+        {/* Current bid (hall screens) */}
+        {!onTeamBid && (
         <section className="relative flex flex-col items-center min-h-0 rounded-2xl bg-slate-900/90 ring-1 ring-white/10 px-8 py-7 fp-card-in overflow-hidden">
           <div className="flex-1 flex flex-col items-center justify-center">
-          <div className={`text-base font-black uppercase tracking-[0.35em] ${player.status === 'UNSOLD' ? 'text-red-400' : 'text-slate-400'}`}>{label}</div>
+          <div className={`min-h-[1.5rem] text-base font-black uppercase tracking-[0.35em] ${player.status === 'UNSOLD' ? 'text-red-400' : 'text-slate-400'}`}>{label}</div>
           {/* Number and unit count together, so Lakh -> Cr never shows a mismatched unit */}
-          <div className={`relative mt-1 font-bebas leading-none whitespace-nowrap ${player.status === 'UNSOLD' ? 'text-slate-500' : 'text-lime-400'}`}>
-            <span className={`text-[11rem] tabular-nums ${isLive ? 'fp-price-glow' : ''}`} style={{ '--fp-glow': 'rgba(255, 176, 0, 0.45)' }}>
+          <div className={`relative mt-1 font-bebas leading-none whitespace-nowrap ${player.status === 'UNSOLD' ? 'text-slate-500' : raised ? 'text-amber-300' : 'text-lime-400'}`}>
+            <span className={`text-[11rem] tabular-nums ${isLive ? 'fp-price-glow' : ''}`} style={{ '--fp-glow': raised ? 'rgba(251, 191, 36, 0.7)' : 'rgba(255, 176, 0, 0.45)' }}>
               <AnimatedPrice value={price} thump={isLive} unitClassName="ml-3 text-8xl uppercase" />
             </span>
-            {isLive && <RaiseTag price={price} className="-top-4 right-0 rounded-full bg-lime-400 px-3 py-1 font-sans text-xl font-black text-slate-950" />}
+            {isLive && <RaiseTag price={price} className={`-top-4 right-0 rounded-full px-3 py-1 font-sans text-xl font-black text-slate-950 ${raised ? 'bg-amber-400' : 'bg-lime-400'}`} />}
             {isLive && bids.length > 0 && <BidSparks burstKey={bids[0].id} color="bg-lime-300" />}
           </div>
 
@@ -976,40 +1190,37 @@ const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, c
 
           </div>
 
-          <div className="w-full grid grid-cols-[1fr_auto_1fr] items-center gap-6">
-            <div className="text-center">
-              {isLive && (
-                <>
-                  <div className={`text-xs font-black uppercase tracking-[0.25em] ${asked ? 'text-amber-400' : 'text-slate-500'}`}>Next bid</div>
-                  <div key={asked || nextBid} className={`font-bebas text-5xl leading-tight ${asked ? 'text-amber-400 fp-rise' : ''}`}>{formatMoney(asked || nextBid)}</div>
-                  <div className={`text-sm font-semibold ${asked ? 'text-amber-300' : 'text-slate-500'}`}>{asked ? 'Raised by auctioneer' : `Increment ${stepText(step)}`}</div>
-                </>
-              )}
+          {/* How many teams are bidding for this player, with the bid clock beside it when one runs */}
+          {isLive && (
+            <div className="w-full flex items-center justify-center gap-10">
+              <div className="text-center">
+                <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Teams in the race</div>
+                <div key={racing} className="font-bebas text-6xl leading-tight fp-rise">{racing}</div>
+              </div>
+              {left !== null && <ClockRing left={left} total={clock.seconds} />}
             </div>
-            {isLive && left !== null ? <ClockRing left={left} total={clock.seconds} /> : <span className="w-px h-24 bg-white/10" />}
-            <div className="text-center">
-              <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Bids on lot</div>
-              <div className="font-bebas text-5xl leading-tight">{bids.length}</div>
-              <div className="text-sm font-semibold text-slate-500">{racing === 1 ? '1 team in the race' : `${racing} teams in the race`}</div>
-            </div>
-          </div>
+          )}
 
           <Stamp status={player.status} />
         </section>
+        )}
 
-        {/* Bid history */}
+        {/* Live Screen: the teams down the right-hand side (bid buttons) */}
+        {onTeamBid && teamGrid}
+        {/* Bid history: hall screens only */}
+        {!onTeamBid && (
         <section className="flex flex-col min-h-0 rounded-2xl bg-slate-900/90 ring-1 ring-white/10 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold">Bid history</h2>
+            <h3 className="text-sm font-extrabold">Bid history</h3>
             <span className="text-xs font-bold text-slate-500">Latest first</span>
           </div>
           {bids.length ? (
-            <ol className="mt-3 flex-1 min-h-0 space-y-2 overflow-hidden">
+            <ol className="mt-2 flex-1 min-h-0 space-y-2 overflow-hidden">
               {bids.slice(0, 9).map((b, i) => {
                 const t = teams.find(x => x.id === b.teamId);
                 return (
-                  <li key={b.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ${i === 0 ? 'bg-lime-500/10 ring-lime-500/50 fp-team-in' : 'bg-slate-950/50 ring-white/5'}`} style={{ opacity: 1 - i * 0.07 }}>
-                    <TeamChip team={t} index={teamIndex(b.teamId)} />
+                  <li key={b.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ring-1 ${i === 0 ? 'bg-lime-500/10 ring-lime-500/50 fp-team-in' : 'bg-slate-950/50 ring-white/5'}`} style={{ opacity: 1 - i * 0.07 }}>
+                    <TeamChip team={t} index={teamIndex(b.teamId)} size="w-11 h-11 text-xs" />
                     <div className="min-w-0 flex-1 leading-tight">
                       <div className="font-bold truncate">{t?.name || 'Team'}</div>
                       <div className="text-xs text-slate-500">{agoText(b)}</div>
@@ -1023,40 +1234,11 @@ const BroadcastDesign = ({ auction, player, teams, bids, lot, asking, nextBid, c
             <p className="mt-6 text-center text-sm font-semibold text-slate-500">No bids yet</p>
           )}
         </section>
+        )}
       </div>
 
-      {/* Teams: purse left, max bid and squad, one row; bigger text the fewer teams there are */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(teams.length, 12)}, minmax(0, 1fr))` }}>
-        {teams.slice(0, 12).map((t, i) => {
-          const active = t.id === leaderId;
-          const maxBid = isLive && getTeamMaxBid ? getTeamMaxBid(t) : null;
-          const many = teams.length > 8;
-          const z = TEAM_ROW_SIZES[teams.length <= 4 ? 'few' : many ? 'many' : 'some'];
-          const money = many ? shortMoney : formatMoney;
-          return (
-            <div key={active ? `${t.id}-${bids[0]?.id || 'lead'}` : t.id} className={`rounded-xl transition-all duration-500 fp-rise ${z.pad} ${active ? 'bg-slate-900 ring-4 ring-lime-400 shadow-lg shadow-lime-500/30 -translate-y-1' : 'bg-slate-900/95 ring-1 ring-white/15'}`} style={{ animationDelay: active ? '0s' : `${i * 0.04}s` }}>
-              <div className={`flex items-center min-w-0 ${z.gap}`}>
-                {/* 9+ teams: no room for names, the code alone (once) */}
-                {many
-                  ? <><span className={`shrink-0 rounded-md px-1.5 font-black text-white ${TEAM_TINTS[i % TEAM_TINTS.length]} ${z.name}`}>{t.shortCode}</span><span className="ml-auto shrink-0 text-sm font-black text-white tabular-nums">{t.squadCount}/{maxSquad}</span></>
-                  : <><TeamChip team={t} index={i} size={z.chip} /><span className={`font-extrabold text-white truncate ${z.name}`}>{t.name}</span></>}
-              </div>
-              <div className={`flex items-baseline justify-between gap-2 ${z.mt}`}>
-                <span className={`font-bebas leading-none text-lime-400 tabular-nums whitespace-nowrap ${z.purse}`}>{money(t.purseRemaining)}</span>
-                {!many && <span className={`font-black text-white tabular-nums ${z.meta}`}>{t.squadCount}/{maxSquad}</span>}
-              </div>
-              <div className={`h-1.5 rounded-full bg-slate-700 overflow-hidden ${z.mt}`}>
-                <div className={`h-full rounded-full ${active ? 'bg-lime-400' : 'bg-white/70'}`} style={{ width: `${Math.min(100, (t.squadCount / maxSquad) * 100)}%` }} />
-              </div>
-              {maxBid !== null && (
-                <div className={`font-bold text-white truncate ${z.mt} ${z.meta}`}>
-                  Max <span className="text-sky-300">{maxBid === Infinity ? 'no limit' : money(maxBid)}</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* Hall screens: the team panel along the bottom (the Live Screen has it as the right-hand column) */}
+      {!onTeamBid && teamPanel}
     </div>
   );
 };
@@ -1213,7 +1395,7 @@ const UpdatesView = ({ events, players, teams }) => {
   );
 };
 
-// Compact player row-card for the scrolling grids: photo, name, category, status and price
+// Compact player row-card for the scrolling grids: photo, name, category, status (or the buying team) and price
 const TILE_STATUS = {
   UPCOMING: { label: 'Yet to auction', ring: 'border-slate-700', dot: 'bg-slate-400', text: 'text-slate-300' },
   CURRENT: { label: 'On the table', ring: 'border-white bg-white/10', dot: 'bg-white animate-pulse', text: 'text-white' },
@@ -1225,7 +1407,7 @@ const PlayerTile = ({ player: p, number, team, onPick, delay = 0 }) => {
   const st = TILE_STATUS[p.status] || TILE_STATUS.UPCOMING;
   const canPick = onPick && (p.status === 'UPCOMING' || p.status === 'UNSOLD');
   const price = p.status === 'SOLD' ? p.soldPrice : p.status === 'CURRENT' && team ? p.currentBid : p.basePrice;
-  const priceLabel = p.status === 'SOLD' ? (team?.shortCode || 'Sold') : p.status === 'CURRENT' && team ? team.shortCode : 'Base';
+  const priceLabel = p.status === 'SOLD' ? 'Sold for' : p.status === 'CURRENT' && team ? 'Bid' : 'Base';
   return (
     <div className={`group flex items-center gap-3 rounded-2xl border-2 bg-slate-800/80 p-2.5 transition-colors hover:border-lime-400/70 fp-rise ${st.ring}`} style={{ animationDelay: `${delay}s` }}>
       <div className="relative shrink-0">
@@ -1236,7 +1418,15 @@ const PlayerTile = ({ player: p, number, team, onPick, delay = 0 }) => {
       <div className="min-w-0 flex-1">
         <div className="truncate text-base font-extrabold leading-tight text-white" title={p.name}>{p.name}</div>
         <div className="truncate text-[11px] font-bold uppercase tracking-wide text-slate-400">{tileLabel(p)}{p.isOverseas ? ' ✈' : ''}</div>
-        <div className={`truncate text-[11px] font-black uppercase tracking-wide ${st.text}`}>{st.label}</div>
+        {team && (p.status === 'SOLD' || p.status === 'CURRENT') ? (
+          // Sold (or leading) team: logo and full name
+          <div className={`mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-black ${st.text}`} title={team.name}>
+            <TeamChip team={team} index={0} size="w-5 h-5 text-[8px]" />
+            <span className="truncate">{p.status === 'SOLD' ? team.name : `${team.name} bidding`}</span>
+          </div>
+        ) : (
+          <div className={`truncate text-[11px] font-black uppercase tracking-wide ${st.text}`}>{st.label}</div>
+        )}
       </div>
       <div className="shrink-0 text-right">
         <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">{priceLabel}</div>
@@ -1298,7 +1488,8 @@ const AllPlayersView = ({ players, teams, onPick }) => {
   const [category, setCategory] = useState('ALL');
   const [search, setSearch] = useState('');
   const categories = [...new Set(players.map(p => p.category).filter(Boolean))];
-  const order = [...players].sort((a, b) => (a.setNo || 0) - (b.setNo || 0));
+  // Listed A to Z by name
+  const order = [...players].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' }));
   const q = search.trim().toLowerCase();
   const list = order.filter(p => (status === 'ALL' || p.status === status) && (category === 'ALL' || p.category === category)
     && (!q || p.name.toLowerCase().includes(q)));
@@ -1434,7 +1625,10 @@ export const backgroundStyle = (key) => {
 // Fills the whole display (not just the 16:9 canvas): the chosen backdrop, then the system's motion layers —
 // drifting diagonal lines, two sweeping stadium-light beams, a breathing gold glow — and a vignette that frames
 // the centre so the player card stands out. All motion stops for viewers who prefer reduced motion.
-const HostBackdrop = ({ background, image }) => (
+const HostBackdrop = ({ background, image, calm }) => calm ? (
+  // Calm view (Live Screen operator): one flat, dim colour, nothing moving
+  <div className="absolute inset-0" style={{ backgroundColor: '#0E1220' }} aria-hidden="true" />
+) : (
   <div className="absolute inset-0 overflow-hidden" style={backgroundStyle(background)} aria-hidden="true">
     {background === 'image' && image && (
       <>
@@ -1477,7 +1671,31 @@ export const useNewLuckyDraw = (luckyDraws, onDraw) => {
 };
 export const HOST_KEY_FOR_VIEW = Object.fromEntries(Object.entries(HOST_VIEW_KEYS).map(([k, v]) => [v, k]));
 
-export const HostScreen = ({ forcedView, forcedDesign, bottomInset = 0, rightGap = false, onPickPlayer, viewKeys = true }) => {
+// Photos of the players still to come download in the background, a few at a time, so a drawn player's
+// photo is already in the browser cache when they are revealed instead of loading in on the big screen
+const preloaded = new Set();
+const usePreloadPhotos = (queue) => {
+  const urls = (queue || []).map(p => p.image).filter(src => src && !src.startsWith('data:') && !preloaded.has(src));
+  const key = urls.join('|');
+  useEffect(() => {
+    if (!urls.length) return undefined;
+    let cancelled = false;
+    const todo = [...urls];
+    const next = () => {
+      if (cancelled) return;
+      const src = todo.shift();
+      if (!src) return;
+      preloaded.add(src);
+      const img = new Image();
+      img.onload = img.onerror = next;
+      img.src = src;
+    };
+    for (let i = 0; i < 4; i++) next();
+    return () => { cancelled = true; };
+  }, [key]);
+};
+
+export const HostScreen = ({ forcedView, forcedDesign, bottomInset = 0, rightGap = false, onPickPlayer, viewKeys = true, onTeamBid, canBid, tileBid, calm = false, arrange }) => {
   const {
     activeAuction: auction, teams, players, currentPlayer, activeLock,
     getTeamMaxBid, bidHistory, runSettings, shuffleAt, nextBidAmount, askingBid, canTeamBid, auctionQueue, luckyDraws, auctionEvents, bidClock
@@ -1499,6 +1717,8 @@ export const HostScreen = ({ forcedView, forcedDesign, bottomInset = 0, rightGap
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [viewKeys]);
+
+  usePreloadPhotos(auctionQueue);
 
   // Random draw animation, shown on every host screen when the controller draws a player
   const [shuffling, setShuffling] = useState(false);
@@ -1536,7 +1756,7 @@ export const HostScreen = ({ forcedView, forcedDesign, bottomInset = 0, rightGap
       lot: { n: order.findIndex(p => p.id === currentPlayer.id) + 1, total: players.length },
       asking: askingBid
     };
-    if (design === 'broadcast') body = <BroadcastDesign {...props} auction={auction} nextBid={nextBidAmount} clock={bidClock} getTeamMaxBid={getTeamMaxBid} />;
+    if (design === 'broadcast') body = <BroadcastDesign {...props} auction={auction} nextBid={nextBidAmount} clock={bidClock} getTeamMaxBid={getTeamMaxBid} onTeamBid={onTeamBid} canBid={canBid} tileBid={tileBid} arrange={arrange} />;
     else if (design === 'card') body = <PlayerCardDesign {...props} />;
     else if (design === 'profile') body = <PlayerProfileDesign {...props} auction={auction} />;
     else if (design === 'stadium') body = <StadiumPlayer {...props} />;
@@ -1545,8 +1765,8 @@ export const HostScreen = ({ forcedView, forcedDesign, bottomInset = 0, rightGap
   }
 
   return (
-    <FitCanvas bottomInset={bottomInset} backdrop={<HostBackdrop background={runSettings.hostBackground} image={runSettings.hostBackgroundImage} />}>
-    <div className="h-full w-full overflow-hidden text-white flex flex-col">
+    <FitCanvas bottomInset={bottomInset} backdrop={<HostBackdrop background={runSettings.hostBackground} image={runSettings.hostBackgroundImage} calm={calm} />}>
+    <div className={`h-full w-full overflow-hidden text-white flex flex-col ${calm ? 'fp-calm' : ''}`}>
       {view !== 'TITLE' && <TopBar auction={auction} players={players} rightGap={rightGap} />}
 
       {/* Team money at the top; hidden on the Teams view, which shows the full table */}

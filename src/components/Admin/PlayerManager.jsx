@@ -12,7 +12,7 @@ const PROFILE_STAT_FIELDS = [['highestScore', 'Highest score', '1'], ['average',
 const EMPTY_PROFILE_STATS = Object.fromEntries(PROFILE_STAT_FIELDS.map(([k]) => [k, '']));
 
 export const PlayerManager = () => {
-  const { players, addPlayer, editPlayer, deletePlayer, releasePlayer, reopenLastPlayer, activeAuction, canEditPlayers } = useAuction();
+  const { players, teams, addPlayer, editPlayer, deletePlayer, releasePlayer, reopenLastPlayer, activeAuction, canEditPlayers, assignPlayerToTeam, setPlayerStatus } = useAuction();
   const infoLabels = (activeAuction?.playerInfoLabels || []).map(l => (l || '').trim()).filter(Boolean);
   const [showModal, setShowModal] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState(null);
@@ -84,7 +84,7 @@ export const PlayerManager = () => {
       category: player.category,
       role: player.role,
       basePrice: player.basePrice,
-      country: player.country,
+      country: player.country || '',
       isOverseas: player.isOverseas || false,
       image: player.image === DEFAULT_PLAYER_PHOTO ? '' : player.image,
       setNo: player.setNo || 1,
@@ -96,7 +96,10 @@ export const PlayerManager = () => {
       battingStyle: player.battingStyle || '',
       bowlingStyle: player.bowlingStyle || '',
       previousTeam: player.previousTeam || '',
-      extraInfo: { ...(player.extraInfo || {}) }
+      extraInfo: { ...(player.extraInfo || {}) },
+      status: player.status === 'CURRENT' ? 'CURRENT' : player.status,
+      soldTo: player.status === 'SOLD' ? player.soldToTeamId || '' : '',
+      soldPrice: player.status === 'SOLD' ? player.soldPrice : player.basePrice
     });
     setPhotoError('');
     setShowModal(true);
@@ -109,7 +112,7 @@ export const PlayerManager = () => {
       category: formData.category,
       role: formData.role,
       basePrice: Number(formData.basePrice),
-      country: formData.country,
+      country: (formData.country || '').trim(),
       isOverseas: formData.isOverseas,
       image: formData.image.trim() || DEFAULT_PLAYER_PHOTO,
       setNo: Number(formData.setNo),
@@ -130,6 +133,14 @@ export const PlayerManager = () => {
 
     if (editingPlayer) {
       editPlayer(editingPlayer.id, playerData);
+      // Status: Sold (team + price, no bidding), Unsold or Yet to auction; a sold player's team is refunded
+      if (formData.status === 'SOLD') {
+        if (!formData.soldTo) { setPhotoError('Choose the team the player is sold to.'); return; }
+        const changed = editingPlayer.status !== 'SOLD' || formData.soldTo !== editingPlayer.soldToTeamId || Number(formData.soldPrice) !== Number(editingPlayer.soldPrice);
+        if (changed && !assignPlayerToTeam(editingPlayer.id, formData.soldTo, formData.soldPrice)) return;
+      } else if ((formData.status === 'UPCOMING' || formData.status === 'UNSOLD') && formData.status !== editingPlayer.status) {
+        setPlayerStatus(editingPlayer.id, formData.status);
+      }
     } else {
       addPlayer(playerData);
     }
@@ -150,7 +161,8 @@ export const PlayerManager = () => {
   const matchesText = p => !q || [p.name, p.role, p.country].some(v => (v || '').toLowerCase().includes(q));
   const matchesCategory = p => categoryFilter === 'ALL' || p.category === categoryFilter;
 
-  const filteredPlayers = players.filter(p => statusTest(p) && matchesCategory(p) && matchesText(p));
+  // Listed A to Z by name
+  const filteredPlayers = [...players].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'en', { sensitivity: 'base' })).filter(p => statusTest(p) && matchesCategory(p) && matchesText(p));
   const filtersOn = statusFilter !== 'ALL' || categoryFilter !== 'ALL' || q;
   const clearFilters = () => { setStatusFilter('ALL'); setCategoryFilter('ALL'); setSearchTerm(''); };
 
@@ -389,10 +401,9 @@ export const PlayerManager = () => {
                   />
                 </div>
                 <div>
-                  <label className="block mb-1">Country</label>
+                  <label className="block mb-1">Country <span className="font-medium text-slate-400">(optional)</span></label>
                   <input
                     type="text"
-                    required
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900"
@@ -439,6 +450,55 @@ export const PlayerManager = () => {
                 />
                 <label htmlFor="isOverseas" className="text-xs text-slate-700">Overseas Player</label>
               </div>
+
+              {/* Direct sale: icon players, chit allotments, corrections */}
+              {editingPlayer && (
+                <div className="rounded-xl border border-lime-300 bg-lime-50 p-3 space-y-2">
+                  <span className="block text-xs font-black uppercase tracking-wider text-lime-800">Player status</span>
+                  <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Player status">
+                    {[['UPCOMING', 'Yet to auction'], ['SOLD', 'Sold'], ['UNSOLD', 'Unsold']].map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={formData.status === id}
+                        onClick={() => setFormData(prev => ({ ...prev, status: id }))}
+                        className={`rounded-lg px-2 py-2 text-xs font-black ${formData.status === id ? (id === 'SOLD' ? 'bg-lime-500 text-slate-950' : id === 'UNSOLD' ? 'bg-red-600 text-white' : 'bg-slate-900 text-white') : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {formData.status === 'CURRENT' && <p className="text-[11px] font-bold text-red-600">This player is on the table now. Pick a status to change it.</p>}
+                  {formData.status === 'SOLD' && <div className="grid grid-cols-2 gap-3">
+                    <select
+                      value={formData.soldTo || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, soldTo: e.target.value }))}
+                      aria-label="Sold to team"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-slate-900"
+                    >
+                      <option value="">Choose team…</option>
+                      {teams.map(t => (
+                        <option key={t.id} value={t.id} disabled={t.id !== formData.soldTo && t.squadCount >= (activeAuction?.maxSquadSize || Infinity)}>
+                          {t.name} · {formatMoney(t.purseRemaining)} left · {t.squadCount}/{activeAuction?.maxSquadSize}
+                        </option>
+                      ))}
+                    </select>
+                    <MoneyInput
+                      label="Sold price"
+                      value={formData.soldPrice}
+                      onChange={(v) => setFormData(prev => ({ ...prev, soldPrice: v }))}
+                      inputClassName="bg-white border border-slate-200 rounded-xl p-2.5 text-slate-900"
+                    />
+                  </div>}
+                  <p className="text-[11px] text-slate-600">
+                    {formData.status === 'SOLD' ? 'Sold to this team without bidding; the price comes off its purse (use 0 for an icon player).'
+                      : editingPlayer.status === 'SOLD' && formData.status !== 'SOLD' ? 'The team gets its money back and the player leaves its squad.'
+                      : formData.status === 'UNSOLD' ? 'The player goes to the unsold list for the re-auction round.'
+                      : 'The player waits in the auction pool.'}
+                  </p>
+                </div>
+              )}
 
               {/* Profile & stats shown on the host screen (optional) */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-100 pt-3">

@@ -173,6 +173,8 @@ const FooterLinks = ({ title, links }) => (
 const Loaded = ({ children }) => {
   const { loaded } = useAuction();
   if (!loaded) {
+    // The stream overlay stays transparent while it loads, so OBS never flashes a dark screen
+    if (screen === 'overlay') return null;
     return (
       <div className={`min-h-screen flex items-center justify-center ${screen ? 'bg-slate-950' : 'bg-slate-50'}`}>
         <div className="flex items-center gap-3 text-sm font-bold text-slate-400">

@@ -5,11 +5,9 @@ import { Badge, Card, Stat, StatusBadge, Stripes, Tabs } from '../ui';
 import { LiveSpotlight } from './LiveAuctionViewer';
 import { TeamsBoard } from './TeamsBoard';
 import { PlayerCatalog } from './PlayerCatalog';
+import { PlayerPool } from './PlayerPool';
 import { LiveUpdates } from './LiveUpdates';
 import { formatMoney } from '../../services/money';
-
-// Width the public auction page is laid out at on every device (phones zoom out to show the same view)
-const DESKTOP_WIDTH = 1280;
 
 const TAB_LABELS = { ARENA: 'Live Arena', UPDATES: 'Updates', OVERVIEW: 'Overview', RESULTS: 'Sold & Unsold', SQUADS: 'Teams', PLAYERS: 'Players' };
 
@@ -53,7 +51,6 @@ const Countdown = ({ startDate }) => {
 };
 
 const UpcomingOverview = ({ auction, teams, players }) => {
-  const byCategory = (auction.categories || []).map(c => [c, players.filter(p => p.category === c).length]);
   return (
     <div className="space-y-6">
       <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
@@ -83,17 +80,7 @@ const UpcomingOverview = ({ auction, teams, players }) => {
           )}
         </div>
 
-        <div className="rounded-2xl bg-white ring-1 ring-slate-200 p-6 shadow-sm">
-          <h3 className="font-extrabold text-slate-900">Player pool ({players.length})</h3>
-          <ul className="mt-4 space-y-2 text-sm">
-            {byCategory.map(([cat, n]) => (
-              <li key={cat} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <span className="text-slate-600">{cat}</span>
-                <strong className="text-slate-900">{n}</strong>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <PlayerPool players={players} teams={teams} />
       </div>
     </div>
   );
@@ -192,16 +179,6 @@ export const AuctionDetail = ({ onBack }) => {
   useEffect(() => {
     if (!tabs.some(([id]) => id === tab)) setTab(tabs[0][0]);
   }, [auction?.status, started]);
-
-  // Phones see this page exactly as a computer does: the browser lays it out at desktop width and zooms out to fit.
-  // The site's normal phone layout comes back on leaving the page.
-  useEffect(() => {
-    const meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) return undefined;
-    const before = meta.getAttribute('content');
-    meta.setAttribute('content', `width=${DESKTOP_WIDTH}`);
-    return () => meta.setAttribute('content', before);
-  }, []);
 
   if (!auction) return null;
   if (!isPublicAuction(auction)) {

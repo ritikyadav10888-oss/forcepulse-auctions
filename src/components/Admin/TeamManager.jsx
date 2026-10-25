@@ -7,6 +7,7 @@ import { BulkImport } from './BulkImport';
 import { ContactForcePulseModal } from './PlanLock';
 import { Plus, Edit2, Trash2, Shield, CheckCircle2, AlertCircle, CreditCard, ImagePlus, X } from 'lucide-react';
 import { formatMoney } from '../../services/money';
+import { tableNumber } from '../../hooks/useTeamBidKeys';
 
 export const TeamManager = () => {
   const { teams, addTeam, editTeam, deleteTeam, activeAuction, activeLock, canSetup, canEditPlayers, isSuperAdmin } = useAuction();
@@ -42,7 +43,8 @@ export const TeamManager = () => {
     logo: DEFAULT_TEAM_LOGO,
     initialPurse: activeAuction?.purseLimit || 100,
     owner: '',
-    coach: ''
+    coach: '',
+    tableNo: ''
   });
 
   const handleOpenAdd = () => {
@@ -53,7 +55,8 @@ export const TeamManager = () => {
       logo: '',
       initialPurse: activeAuction?.purseLimit || 100,
       owner: '',
-      coach: ''
+      coach: '',
+      tableNo: String(teams.length + 1)
     });
     setLogoError('');
     setShowModal(true);
@@ -67,7 +70,8 @@ export const TeamManager = () => {
       logo: team.logo === DEFAULT_TEAM_LOGO ? '' : team.logo,
       initialPurse: team.initialPurse,
       owner: team.owner || '',
-      coach: team.coach || ''
+      coach: team.coach || '',
+      tableNo: team.tableNo ? String(team.tableNo) : ''
     });
     setShowModal(true);
   };
@@ -79,7 +83,8 @@ export const TeamManager = () => {
       editTeam(editingTeam.id, {
         ...formData,
         logo,
-        initialPurse: Number(formData.initialPurse)
+        initialPurse: Number(formData.initialPurse),
+        tableNo: Number(formData.tableNo) || null
       });
     } else {
       // A Force Pulse admin going past the plan moves the auction up to the plan that fits
@@ -90,7 +95,8 @@ export const TeamManager = () => {
       addTeam({
         ...formData,
         logo,
-        initialPurse: Number(formData.initialPurse)
+        initialPurse: Number(formData.initialPurse),
+        tableNo: Number(formData.tableNo) || null
       });
     }
     setShowModal(false);
@@ -176,7 +182,10 @@ export const TeamManager = () => {
                 </div>
 
                 <div>
-                  <h3 className="font-extrabold text-base text-slate-900">{team.name} ({team.shortCode})</h3>
+                  <h3 className="font-extrabold text-base text-slate-900">
+                    <span className="mr-1.5 rounded-md bg-slate-900 px-1.5 py-0.5 text-xs font-black text-white" title="Table number">{tableNumber(team, idx)}</span>
+                    {team.name} ({team.shortCode})
+                  </h3>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">Coach: {team.coach || 'N/A'}</p>
                 </div>
 
@@ -234,6 +243,18 @@ export const TeamManager = () => {
                   placeholder="e.g. Mumbai Titans"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-1">Table No. <span className="ml-1 font-medium text-slate-400">the auctioneer calls the team by this number; bid buttons and keys follow it</span></label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 5"
+                  value={formData.tableNo}
+                  onChange={(e) => setFormData({ ...formData, tableNo: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:ring-2 focus:ring-lime-500"
                 />
               </div>

@@ -11,7 +11,7 @@ $out = Join-Path (Split-Path -Parent $root) $name
 
 # Top-level folders and files left out: rebuilt on the server, or never needed there.
 # Skipped by name here because tar's --exclude matches anywhere in a path ('uploads' would also drop app/api/uploads).
-$skipTop = @('node_modules', '.next', '.git', 'data', 'backups', 'AUCTIONS', 'local-backup-20261022')
+$skipTop = @('node_modules', '.next', '.git', 'data', 'backups', 'AUCTIONS', 'ypl', 'local-backup-20261022')
 # Patterns tar may match anywhere
 $exclude = @('*.zip', '*.tmp.mjs', '*.xlsx', '*.pdf')
 if ($Update) {

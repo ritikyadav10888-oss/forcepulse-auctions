@@ -4,7 +4,7 @@ import {
   FileSpreadsheet, Layers, Undo2, PlusCircle, UserPlus, Gavel,
   Mail, Phone, MessageCircle, Search, Radio, Users, Link2, MonitorPlay, Check
 } from 'lucide-react';
-import { useAuction, isPublicAuction } from '../../context/AuctionContext';
+import { useAuction, isPublicAuction, byPinned } from '../../context/AuctionContext';
 import { FORCE_PULSE_CONTACT, PLANS as PLAN_LIMITS } from '../../config/forcePulse';
 import { AuctionCard } from './BrowseAuctions';
 import { Button, Badge, LiveDot, SectionHeading, Stripes, Tabs, EmptyState } from '../ui';
@@ -64,7 +64,7 @@ export const PublicHome = ({ onBrowse, onOpenAuction, onOrganise }) => {
   const guide = GUIDES.find(g => g.id === guideId);
   const featured = auctions
     .filter(isPublicAuction)
-    .sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3) || (a.status === 'PAST'
+    .sort((a, b) => byPinned(a, b) || (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3) || (a.status === 'PAST'
       ? new Date(b.startDate) - new Date(a.startDate)
       : new Date(a.startDate) - new Date(b.startDate)))
     .slice(0, FEATURED_COUNT);

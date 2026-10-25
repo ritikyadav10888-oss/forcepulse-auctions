@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { soundManager } from '../services/soundEffects';
+import { useReloadOnNewBuild } from '../hooks/useReloadOnNewBuild';
 import confetti from 'canvas-confetti';
 import { useSessionState } from '../hooks/useSessionState';
 import { FREE_PLAN, getPlan, planForTeams } from '../config/forcePulse';
@@ -115,6 +116,9 @@ const useSyncedState = (name, initial, isMap = false) => {
 // Auctions on a paid plan (more than 2 teams) are set up by Force Pulse: the organiser runs them
 // but teams, players and rules are managed from the Force Pulse admin panel.
 // Public page shows only once Force Pulse has verified the auction (older auctions without the flag are public)
+// Pinned auctions (auction.pinned) are listed first everywhere: home, Auctions page and dashboards
+export const byPinned = (a, b) => Number(!!b.pinned) - Number(!!a.pinned);
+
 export const isPublicAuction = (auction) => !!auction && auction.publicPageEnabled !== false;
 
 // What an organiser may still change on a Force Pulse-managed auction (rules, purse and teams stay with Force Pulse)
@@ -284,6 +288,9 @@ export const AuctionProvider = ({ children }) => {
     });
   }, [loaded, userKey]);
 
+  // Every open page moves onto a new version by itself after a deploy
+  useReloadOnNewBuild();
+
   useEffect(() => {
     if (currentUser) refreshUsers().catch(() => {});
     else setUsers([]);
@@ -309,7 +316,13 @@ export const AuctionProvider = ({ children }) => {
     };
   });
 
-  const teams = allTeams.filter(t => t.auctionId === activeAuctionId);
+  // In table-number order (the auctioneer calls teams by their table); teams without one keep their place, after them
+  const teams = allTeams
+    .filter(t => t.auctionId === activeAuctionId)
+    .map((t, i) => ({ t, i, n: Number(t.tableNo) || Infinity }))
+    .sort((a, b) => a.n - b.n || a.i - b.i)
+    // `table`: the number shown and typed for the team, fixed here so it stays the same wherever its tile is placed
+    .map((x, i) => ({ ...x.t, table: Number(x.t.tableNo) || i + 1 }));
 
   // ---------- Ownership & plan locks ----------
   const isSuperAdmin = !!currentUser?.isSuperAdmin;
@@ -387,7 +400,10 @@ export const AuctionProvider = ({ children }) => {
     const team = teams.find(t => t.id === teamId);
     if (!team) return { ok: false, reason: 'Team not found in this auction.' };
     if (!player || player.status !== 'CURRENT') return { ok: false, reason: 'No player is on the bidding floor.' };
-    if (player.highestBidderTeamId === teamId && !getRunSettings(activeAuction).allowSameTeamRebid) {
+    // The leading team may not raise its own bid, except to accept the price the auctioneer has raised to with +
+    const raisedTo = liveState.askingBid?.playerId === player.id ? round2(liveState.askingBid.amount) : 0;
+    const acceptsRaise = raisedTo > round2(player.currentBid) && round2(amount) === raisedTo;
+    if (player.highestBidderTeamId === teamId && !getRunSettings(activeAuction).allowSameTeamRebid && !acceptsRaise) {
       return { ok: false, reason: `${team.name} already holds the highest bid.` };
     }
     const maxSquad = Number(activeAuction?.maxSquadSize || Infinity);
@@ -558,11 +574,31 @@ export const AuctionProvider = ({ children }) => {
       showNotice('No team has placed a bid for this player yet.');
       return false;
     }
+    // If the auctioneer has raised the price with + since the last bid, the leading team buys at that raised price
+    const asked = liveState.askingBid?.playerId === playerId ? round2(liveState.askingBid.amount) : 0;
+    const raised = asked > round2(target.currentBid) ? asked : 0;
+    const price = raised || target.currentBid;
+    if (raised) {
+      const leader = teams.find(t => t.id === target.highestBidderTeamId);
+      const max = leader ? Math.min(getTeamMaxBid(leader), playerBidCap) : 0;
+      if (raised > max) {
+        showNotice(`${leader?.name || 'The leading team'} can bid at most ${formatMoney(max)}. Lower the raised price to sell.`);
+        return false;
+      }
+    }
     setPlayers(prev => prev.map(p => p.id === playerId
-      ? { ...p, status: 'SOLD', soldToTeamId: target.highestBidderTeamId, soldPrice: target.currentBid }
+      ? { ...p, status: 'SOLD', currentBid: price, soldToTeamId: target.highestBidderTeamId, soldPrice: price }
       : p));
-    updateLive({ lastDecidedId: playerId });
-    logEvent('SOLD', `${target.name} sold to ${teamName(target.highestBidderTeamId)} for ${formatMoney(target.currentBid)}`, { playerId, teamId: target.highestBidderTeamId, amount: target.currentBid });
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    updateLive(cur => ({
+      lastDecidedId: playerId,
+      askingBid: null,
+      // The raised price goes into the bid history as the leading team's bid, so undo and the screens match the sale
+      bidHistory: raised
+        ? [{ id: `bid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, playerId, teamId: target.highestBidderTeamId, amount: raised, prevBid: target.currentBid, prevTeamId: target.highestBidderTeamId, time, at: Date.now() }, ...cur.bidHistory].slice(0, 30)
+        : cur.bidHistory
+    }));
+    logEvent('SOLD', `${target.name} sold to ${teamName(target.highestBidderTeamId)} for ${formatMoney(price)}${raised ? ' (raised price)' : ''}`, { playerId, teamId: target.highestBidderTeamId, amount: price });
     return true;
   };
 
@@ -741,7 +777,9 @@ export const AuctionProvider = ({ children }) => {
     }
     const upcoming = pool.filter(p => p.status === 'UPCOMING');
     const lowestSet = Math.min(...upcoming.map(p => p.setNo || 0));
-    const candidates = upcoming.length ? upcoming.filter(p => (p.setNo || 0) === lowestSet) : pool;
+    // When every player has their own number (a serial, not a set), the draw is from all upcoming players
+    const setsShared = new Set(upcoming.map(p => p.setNo || 0)).size < upcoming.length;
+    const candidates = !upcoming.length ? pool : setsShared ? upcoming.filter(p => (p.setNo || 0) === lowestSet) : upcoming;
     const pick = candidates[Math.floor(Math.random() * candidates.length)];
     return selectPlayerForAuction(pick.id, { shuffle: true });
   };
@@ -1003,7 +1041,7 @@ export const AuctionProvider = ({ children }) => {
   };
 
   const newTeam = (data, i = 0) => {
-    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, ...rest } = data;
+    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, table: _t, ...rest } = data;
     return {
       ...rest,
       id: `team-${Date.now()}-${i}`,
@@ -1080,7 +1118,7 @@ export const AuctionProvider = ({ children }) => {
   // Purse remaining is derived from sold players, so editing a team never wipes what it has spent
   const editTeam = (teamId, updatedData) => {
     if (!guardPlayers()) return false;
-    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, ...rest } = updatedData;
+    const { purseRemaining: _ignored, spent: _s, squadCount: _c, overseasCount: _o, table: _t, ...rest } = updatedData;
     const { initialPurse: _purse, ...details } = rest;
     const data = canSetup ? rest : details;
     setTeams(prev => prev.map(t => t.id === teamId ? { ...t, ...data } : t));
@@ -1143,6 +1181,46 @@ export const AuctionProvider = ({ children }) => {
     return true;
   };
 
+  // Status from the player form: UPCOMING (yet to auction) or UNSOLD; a sold player's team gets the money back
+  const setPlayerStatus = (playerId, status) => {
+    if (!guardPlayers() || !['UPCOMING', 'UNSOLD'].includes(status)) return false;
+    const target = players.find(p => p.id === playerId);
+    if (!target) return false;
+    setPlayers(prev => prev.map(p => {
+      if (p.id !== playerId) return p;
+      const base = p.originalBasePrice ?? p.basePrice;
+      const { originalBasePrice: _o, round: _r, ...rest } = p;
+      return { ...rest, basePrice: base, status, currentBid: base, highestBidderTeamId: null, soldToTeamId: null, soldPrice: null };
+    }));
+    if (liveState.currentPlayerId === playerId) updateLive(cur => ({ currentPlayerId: null, bidHistory: (cur.bidHistory || []).filter(b => b.playerId !== playerId) }));
+    logEvent(status, `${target.name} set to ${status === 'UPCOMING' ? 'yet to auction' : 'unsold'}`, { playerId });
+    return true;
+  };
+
+  // Direct sale from the player form (no bidding): checks squad space and purse, logs it like a sale
+  const assignPlayerToTeam = (playerId, teamId, price) => {
+    if (!guardPlayers()) return false;
+    const target = players.find(p => p.id === playerId);
+    const team = teams.find(t => t.id === teamId);
+    if (!target || !team) return false;
+    const amount = round2(Number(price) || 0);
+    const already = target.status === 'SOLD' && target.soldToTeamId === teamId ? Number(target.soldPrice || 0) : 0;
+    if (target.soldToTeamId !== teamId && team.squadCount >= (Number(activeAuction?.maxSquadSize) || Infinity)) {
+      showNotice(`${team.name} already has a full squad.`);
+      return false;
+    }
+    if (amount > Number(team.purseRemaining) + already) {
+      showNotice(`${team.name} has only ${formatMoney(team.purseRemaining + already)} left.`);
+      return false;
+    }
+    setPlayers(prev => prev.map(p => p.id === playerId
+      ? { ...p, status: 'SOLD', soldToTeamId: teamId, soldPrice: amount, currentBid: amount, highestBidderTeamId: teamId }
+      : p));
+    if (liveState.currentPlayerId === playerId) updateLive({ currentPlayerId: null });
+    logEvent('SOLD', `${target.name} assigned to ${team.name} for ${formatMoney(amount)}`, { playerId, teamId, amount });
+    return true;
+  };
+
   const deletePlayer = (playerId) => {
     if (!guardPlayers()) return false;
     setPlayers(prev => prev.filter(p => p.id !== playerId));
@@ -1194,6 +1272,8 @@ export const AuctionProvider = ({ children }) => {
         reopenLastPlayer,
         reauctionAllUnsold,
         lowerBasePrice,
+        assignPlayerToTeam,
+        setPlayerStatus,
         restoreBasePrice,
         sellToRandomTeam,
         runLuckyDraw,
